@@ -24,6 +24,7 @@ std::vector<BinaryOperator> binary_ops {
     { TypeKind::FloatType, Operator::Modulo, PseudoType::Lhs, PseudoType::Lhs },
     { TypeKind::IntType, Operator::Equals, PseudoType::Lhs, TypeRegistry::boolean },
     { TypeKind::FloatType, Operator::Equals, PseudoType::Lhs, TypeRegistry::boolean },
+    { TypeKind::OptionalType, Operator::Equals, TypeKind::VoidType, TypeRegistry::boolean },
     { TypeKind::IntType, Operator::NotEqual, PseudoType::Lhs, TypeRegistry::boolean },
     { TypeKind::FloatType, Operator::NotEqual, PseudoType::Lhs, TypeRegistry::boolean },
     { TypeKind::IntType, Operator::Less, PseudoType::Lhs, TypeRegistry::boolean },

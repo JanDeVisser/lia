@@ -841,6 +841,36 @@ static GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, QBEContext &c
     return lhs.value;
 }
 
+static GenResult cast(QBEOperand value, pType const &target_type, QBEContext &ctx)
+{
+    if (value.node->bound_type == target_type) {
+        return value.value;
+    }
+    return std::visit(
+        overloads {
+            [&ctx, &value](OptionalType const &optional, BoolType const &) -> GenResult {
+                auto flag_ptr = ILValue::local(++ctx.next_var, ILBaseType::L);
+                auto ret_value = ILValue::local(++ctx.next_var, ILBaseType::W);
+                ctx.add_operation(
+                    ExprDef {
+                        value.value,
+                        ILValue::integer(optional.type->size_of(), ILBaseType::L),
+                        ILOperation::Add,
+                        flag_ptr,
+                    });
+                ctx.add_operation(
+                    LoadDef {
+                        flag_ptr,
+                        ret_value,
+                    });
+                return ret_value;
+            },
+            [](auto const &, auto const &) -> GenResult {
+                return std::unexpected(L"Invalid cast in QBE");
+            } },
+        value.node->bound_type->description, target_type->description);
+}
+
 template<class Node>
 GenResult generate_qbe_node(ASTNode const &, Node const &, QBEContext &ctx)
 {
@@ -1159,6 +1189,13 @@ GenResult generate_qbe_node(ASTNode const &n, IfStatement const &impl, QBEContex
         cond_false = else_block;
     }
     auto condition_var = TRY_GENERATE(impl.condition, ctx);
+    if (impl.condition->bound_type != TypeRegistry::boolean) {
+        if (auto res = cast(condition_var, TypeRegistry::boolean, ctx); !res.has_value()) {
+            return res;
+        } else {
+            condition_var = QBEOperand { res.value(), n };
+        }
+    }
     ctx.add_operation(
         JnzDef {
             condition_var.value,
@@ -1402,6 +1439,13 @@ GenResult generate_qbe_node(ASTNode const &n, WhileStatement const &impl, QBECon
     auto end_loop = ++ctx.next_label;
     ctx.add_operation(LabelDef { top_loop });
     auto condition_var = TRY_GENERATE(impl.condition, ctx);
+    if (impl.condition->bound_type != TypeRegistry::boolean) {
+        if (auto res = cast(condition_var, TypeRegistry::boolean, ctx); !res.has_value()) {
+            return res;
+        } else {
+            condition_var = QBEOperand { res.value(), n };
+        }
+    }
     ctx.add_operation(
         JnzDef {
             condition_var.value,

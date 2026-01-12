@@ -203,7 +203,7 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
     auto rhs_value_type = rhs_type->value_type();
 
     if (impl.op == Operator::Assign) {
-        if (!lhs_value_type->compatible(rhs_value_type)) {
+        if (!lhs_value_type->compatible(rhs_value_type) && !rhs_value_type->assignable_to(lhs_value_type)) {
             return parser.bind_error(
                 n->location,
                 L"Cannot assign a value of type `{}` to a variable of type `{}`",
@@ -719,9 +719,9 @@ template<>
 BindResult bind(ASTNode n, IfStatement &impl)
 {
     try_bind(impl.condition);
-    if (!is<BoolType>((impl.condition)->bound_type)) {
+    if (!impl.condition->bound_type->assignable_to(TypeRegistry::boolean)) {
         return n.bind_error(
-            L"`while` loop condition is a `{}`, not a boolean",
+            L"`if` loop condition is a `{}`, not a boolean",
             (impl.condition)->bound_type->name);
     }
     try_bind(impl.if_branch);
@@ -964,5 +964,4 @@ BindResult bind(ASTNode node)
         }
     }
 }
-
 }

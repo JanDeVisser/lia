@@ -378,6 +378,12 @@ bool Type::assignable_to(pType const &lhs) const
     auto rhs = id;
     return std::visit(
         overloads {
+            [this, &rhs](OptionalType const &, VoidType const &) -> bool {
+                return true;
+            },
+            [this, &rhs](OptionalType const &, BoolType const &) -> bool {
+                return true;
+            },
             [this, &rhs](OptionalType const &optional, auto const &) -> bool {
                 return optional.type == rhs;
             },

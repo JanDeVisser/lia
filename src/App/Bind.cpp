@@ -868,7 +868,7 @@ BindResult bind(ASTNode n, VariableDeclaration &impl)
     if (my_type == nullptr) {
         my_type = init_type;
     }
-    if (init_type != nullptr && !init_type->compatible(my_type)) {
+    if (init_type != nullptr && !init_type->compatible(my_type) && !init_type->assignable_to(my_type)) {
         return n.bind_error(
             L"Type mismatch between declared type `{}` of `{}` and type of initializer value `{}`",
             my_type->name, impl.name, init_type->name);

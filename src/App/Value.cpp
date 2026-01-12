@@ -659,6 +659,11 @@ Value::Value(Atom atom)
 {
 }
 
+Value::Value(std::nullptr_t)
+    : Value(TypeRegistry::void_)
+{
+}
+
 std::optional<Value> Value::coerce(pType const &to_type) const
 {
     if (type == to_type) {

@@ -244,10 +244,16 @@ ASTNode Parser::parse_statement()
             level = old_level;
         }
         case '=':
+        case '?':
+        case '&':
+        case '[':
             if (lexer.has_lookback(1)
                 && lexer.lookback(0).matches_symbol(':')
                 && lexer.lookback(1).matches(TokenKind::Identifier)) {
                 // This is the '=' of a variable decl with implied type:
+                //   or a '?' of an optional type
+                //   or a '&' of a reference type
+                //   or a '[' of an array or slice type
                 return parse_var_decl();
             }
             // Fall through
@@ -1191,6 +1197,7 @@ ASTNode Parser::parse_var_decl()
     ASTNode type_name {};
     auto    location = lexer.lookback(is_const ? 2 : 1).location;
     auto    end_location = token.location;
+    info("parse_var_decl token {}", TokenKind_name(token.kind));
     if (!token.matches_symbol('=')) {
         type_name = parse_type();
         if (type_name == nullptr) {

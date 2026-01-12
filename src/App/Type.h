@@ -421,6 +421,7 @@ struct Type {
     intptr_t                      align_of() const;
     pType                         value_type() const;
     bool                          compatible(pType const &other) const;
+    bool                          assignable_to(pType const &lhs) const;
     std::map<std::wstring, pType> infer_generic_arguments(pType const &param_type) const;
 };
 

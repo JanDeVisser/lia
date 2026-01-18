@@ -372,16 +372,16 @@ bool Type::compatible(pType const &other) const
 
 bool Type::assignable_to(pType const &lhs) const
 {
-    if (id == lhs.id) {
+    if (id == lhs) {
         return true;
     }
     auto rhs = id;
     return std::visit(
         overloads {
-            [this, &rhs](OptionalType const &, VoidType const &) -> bool {
+            [](OptionalType const &, VoidType const &) -> bool {
                 return true;
             },
-            [this, &rhs](OptionalType const &, BoolType const &) -> bool {
+            [](BoolType const &, OptionalType const &) -> bool {
                 return true;
             },
             [this, &rhs](OptionalType const &optional, auto const &) -> bool {

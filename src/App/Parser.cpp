@@ -1197,7 +1197,6 @@ ASTNode Parser::parse_var_decl()
     ASTNode type_name {};
     auto    location = lexer.lookback(is_const ? 2 : 1).location;
     auto    end_location = token.location;
-    info("parse_var_decl token {}", TokenKind_name(token.kind));
     if (!token.matches_symbol('=')) {
         type_name = parse_type();
         if (type_name == nullptr) {

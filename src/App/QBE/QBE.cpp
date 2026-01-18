@@ -50,7 +50,18 @@ namespace QBEType {
 
 ILType qbe_type(IntType const &descr, pType const &)
 {
-    return (descr.width_bits < 64) ? ILBaseType::W : ILBaseType::L;
+    switch (descr.width_bits) {
+    case 8:
+        return (descr.is_signed) ? ILBaseType::SB : ILBaseType ::UB;
+    case 16:
+        return (descr.is_signed) ? ILBaseType::SH : ILBaseType ::UH;
+    case 32:
+        return (descr.is_signed) ? ILBaseType::UW : ILBaseType ::UW;
+    case 64:
+        return ILBaseType::L;
+    default:
+        UNREACHABLE();
+    }
 }
 
 ILType qbe_type(BoolType const &, pType const &)
@@ -850,7 +861,7 @@ static GenResult cast(QBEOperand value, pType const &target_type, QBEContext &ct
         overloads {
             [&ctx, &value](OptionalType const &optional, BoolType const &) -> GenResult {
                 auto flag_ptr = ILValue::local(++ctx.next_var, ILBaseType::L);
-                auto ret_value = ILValue::local(++ctx.next_var, ILBaseType::W);
+                auto ret_value = ILValue::local(++ctx.next_var, ILBaseType::SB);
                 ctx.add_operation(
                     ExprDef {
                         value.value,
@@ -1133,7 +1144,7 @@ std::wostream &operator<<(std::wostream &os, ILFunction const &function)
     if (function.exported) {
         os << "export ";
     }
-    os << "function " << function.return_type << " $" << function.name << '(';
+    os << "function " << basetype(function.return_type) << " $" << function.name << '(';
     auto first = true;
     for (auto const &param : function.parameters) {
         if (!first) {
@@ -1143,7 +1154,7 @@ std::wostream &operator<<(std::wostream &os, ILFunction const &function)
         std::visit(
             overloads {
                 [&os](ILBaseType const &bt) {
-                    os << bt;
+                    os << must_extend(bt);
                 },
                 [&os](std::wstring const &t) {
                     os << t;

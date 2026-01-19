@@ -57,7 +57,13 @@ enum class ILBaseType {
 #undef S
 };
 
-using ILType = std::variant<ILBaseType, std::wstring>;
+struct ILStructType {
+    std::wstring name;
+    intptr_t     align;
+    intptr_t     size;
+};
+
+using ILType = std::variant<ILBaseType, ILStructType>;
 
 std::wostream &operator<<(std::wostream &os, ILBaseType const &type);
 std::wostream &operator<<(std::wostream &os, ILType const &type);
@@ -65,6 +71,7 @@ std::wostream &operator<<(std::wostream &os, ILType const &type);
 ILBaseType basetype(ILType const &type);
 ILBaseType must_extend(ILType const &type);
 ILBaseType targettype(ILType const &type);
+ILType     returntype(ILType const &type);
 int        align_of(ILType const &type);
 int        size_of(ILType const &type);
 
@@ -147,19 +154,19 @@ struct ILValue {
     static ILValue local(int var, TypeDesc td)
     {
         ILType t { std::move(td) };
-        return { t, Local::value(var), align_of(t), size_of(t) };
+        return { t, Local::value(var) };
     }
 
     static ILValue local_ref(int var)
     {
         ILType t { ILBaseType::L };
-        return { t, Local::ref(var), align_of(t), size_of(t) };
+        return { t, Local::ref(var) };
     }
 
     template<typename TypeDesc>
     static ILValue global(std::wstring name, TypeDesc td)
     {
-        return { ILType { std::move(td) }, Global { std::move(name) }, 8, 8 };
+        return { ILType { std::move(td) }, Global { std::move(name) } };
     }
 
     template<typename TypeDesc>
@@ -171,7 +178,7 @@ struct ILValue {
     template<typename TypeDesc>
     static ILValue variable(std::wstring name, TypeDesc td)
     {
-        return { ILType { std::move(td) }, Variable { std::move(name) }, 8, 8 };
+        return { ILType { std::move(td) }, Variable { std::move(name) } };
     }
 
     template<typename TypeDesc>
@@ -194,19 +201,19 @@ struct ILValue {
     static ILValue float_val(double d, TypeDesc td)
     {
         ILType t { std::move(td) };
-        return { t, d, align_of(t), size_of(t) };
+        return { t, d };
     }
 
     template<typename TypeDesc>
     static ILValue integer(int64_t i, TypeDesc td)
     {
         ILType t { std::move(td) };
-        return { t, i, align_of(t), size_of(t) };
+        return { t, i };
     }
 
     static ILValue sequence(std::vector<ILValue> values, int align, int size)
     {
-        return { ILType { ILBaseType::V }, std::move(values), align, size };
+        return { ILType { ILBaseType::V }, std::move(values) };
     }
 
     static ILValue null()
@@ -216,8 +223,6 @@ struct ILValue {
 
     ILType       type;
     ILValueInner inner;
-    int          align;
-    int          size;
 };
 
 using ILValues = std::vector<ILValue>;

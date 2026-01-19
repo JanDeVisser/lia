@@ -12,6 +12,7 @@
 #include <format>
 #include <fstream>
 #include <ranges>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -79,14 +80,19 @@ ILType qbe_type(ZeroTerminatedArray const &, pType const &)
     return ILBaseType::L;
 }
 
-ILType qbe_type(SliceType const &, pType const &)
+ILType qbe_type(SliceType const &slice, pType const &)
 {
-    return L":slice_t";
+    return ILStructType { L":slice_t", slice.align_of(), slice.size_of() };
+}
+
+ILType qbe_type(OptionalType const &opt, pType const &type)
+{
+    return ILStructType { std::format(L":opt{}", *(type.id)), opt.align_of(), opt.size_of() };
 }
 
 ILType qbe_type(StructType const &strukt, pType const &type)
 {
-    return std::format(L":struct{}", *(type.id));
+    return ILStructType { std::format(L":struct{}", *(type.id)), strukt.align_of(), strukt.size_of() };
 }
 
 ILType qbe_type(auto const &, pType const &)
@@ -141,7 +147,7 @@ struct QBEContext {
     ILType qbe_type(pType const &type)
     {
         auto ret = QBEType::qbe_type(type);
-        if (std::holds_alternative<std::wstring>(ret)) {
+        if (std::holds_alternative<ILStructType>(ret)) {
             auto &file { program.files[current_file] };
             auto  found { false };
             for (auto const &t : file.types) {
@@ -336,12 +342,6 @@ struct QBEUnaryExpr {
                 return __res;                                         \
             } else {                                                  \
                 __var = __res.value();                                \
-                if (__var.align == 0) {                               \
-                    __var.align = __n->bound_type->align_of();        \
-                }                                                     \
-                if (__var.size == 0) {                                \
-                    __var.size = __n->bound_type->size_of();          \
-                }                                                     \
             }                                                         \
             (QBEOperand) { __var, __n };                              \
         })
@@ -785,13 +785,13 @@ static void assign(ILValue const &lhs, ILValue const &rhs, QBEContext &ctx)
                         ctx.add_operation(
                             ExprDef {
                                 prev_lhs,
-                                ILValue::integer(alignat(prev_size, value.align), ILBaseType::L),
+                                ILValue::integer(alignat(prev_size, align_of(value.type)), ILBaseType::L),
                                 ILOperation::Add,
                                 lhs_ptr,
                             });
                     }
                     assign(lhs_ptr, value, ctx);
-                    prev_size = value.size;
+                    prev_size = size_of(value.type);
                     prev_lhs = lhs_ptr;
                 }
             },
@@ -1093,11 +1093,12 @@ GenResult generate_qbe_node(ASTNode const &n, ExpressionList const &impl, QBECon
     int      size = 0;
     for (auto const &expr : impl.expressions) {
         values.emplace_back(dereference(TRY_GENERATE(expr, ctx), ctx));
+        auto const &type = values.back().type;
         if (size > 0) {
-            size = alignat(size, values.back().align);
+            size = alignat(size, align_of(type));
         }
-        size += values.back().size;
-        align = std::max(align, values.back().align);
+        size += size_of(type);
+        align = std::max(align, align_of(type));
     }
     return ILValue::sequence(values, align, size);
 }
@@ -1144,7 +1145,7 @@ std::wostream &operator<<(std::wostream &os, ILFunction const &function)
     if (function.exported) {
         os << "export ";
     }
-    os << "function " << basetype(function.return_type) << " $" << function.name << '(';
+    os << "function " << returntype(function.return_type) << " $" << function.name << '(';
     auto first = true;
     for (auto const &param : function.parameters) {
         if (!first) {
@@ -1156,8 +1157,8 @@ std::wostream &operator<<(std::wostream &os, ILFunction const &function)
                 [&os](ILBaseType const &bt) {
                     os << must_extend(bt);
                 },
-                [&os](std::wstring const &t) {
-                    os << t;
+                [&os](ILStructType const &t) {
+                    os << t.name;
                 } },
             param.type);
         os << " %" << param.name << "$$";
@@ -1279,6 +1280,13 @@ bool flatten_type(StructType const &strukt, bool first, std::wostream &os)
     return first;
 }
 
+bool flatten_type(OptionalType const &opt, bool first, std::wostream &os)
+{
+    first = flatten_type(opt.type, first, os);
+    first = flatten_type(TypeRegistry::boolean, first, os);
+    return first;
+}
+
 bool flatten_type(auto const &descr, bool first, std::wostream &os)
 {
     NYI("flatten_type for {}", typeid(descr).name());
@@ -1304,6 +1312,11 @@ std::wostream &operator<<(std::wostream &os, ILFile const &file)
                 [&os, &type](StructType const &strukt) {
                     os << "type :struct" << *(type.id) << " = { ";
                     flatten_type(strukt, true, os);
+                    os << " }\n";
+                },
+                [&os, &type](OptionalType const &opt) {
+                    os << "type :opt" << *(type.id) << " = { ";
+                    flatten_type(opt, true, os);
                     os << " }\n";
                 },
                 [](auto const &) {

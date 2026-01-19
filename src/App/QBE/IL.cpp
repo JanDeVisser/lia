@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <sstream>
+
 #include <App/Parser.h>
 #include <App/QBE/QBE.h>
 
@@ -16,8 +18,21 @@ ILBaseType basetype(ILType const &type)
             [](ILBaseType const &base_type) -> ILBaseType {
                 return static_cast<ILBaseType>(static_cast<uint8_t>(base_type) & 0xFC);
             },
-            [](auto const &) -> ILBaseType {
-                UNREACHABLE();
+            [](ILStructType const &) -> ILBaseType {
+                return ILBaseType::L;
+            } },
+        type);
+}
+
+ILType returntype(ILType const &type)
+{
+    return std::visit(
+        overloads {
+            [&type](ILBaseType const &base_type) -> ILType {
+                return basetype(type);
+            },
+            [&type](ILStructType const &) -> ILType {
+                return type;
             } },
         type);
 }
@@ -69,8 +84,8 @@ ILBaseType targettype(ILType const &type)
                     return ILBaseType::W;
                 }
             },
-            [](auto const &) -> ILBaseType {
-                UNREACHABLE();
+            [](ILStructType const &) -> ILBaseType {
+                return ILBaseType::L;
             } },
         type);
 }
@@ -90,12 +105,9 @@ int align_of(ILBaseType const &type)
     }
 }
 
-int align_of(std::wstring const &type)
+int align_of(ILStructType const &type)
 {
-    if (type == L":slice_t") {
-        return TypeRegistry::string->align_of();
-    }
-    NYI(L"Alignment of non-base type `{}`", type);
+    return type.align;
 }
 
 int size_of(ILBaseType const &type)
@@ -113,12 +125,9 @@ int size_of(ILBaseType const &type)
     }
 }
 
-int size_of(std::wstring const &type)
+int size_of(ILStructType const &type)
 {
-    if (type == L":slice_t") {
-        return TypeRegistry::string->align_of();
-    }
-    NYI(L"Size of non-base type `{}`", type);
+    return type.size;
 }
 
 int align_of(ILType const &type)
@@ -160,8 +169,8 @@ std::wostream &operator<<(std::wostream &os, ILType const &type)
             [&os](ILBaseType const &inner) {
                 os << inner;
             },
-            [&os](std::wstring const &inner) {
-                os << 'L';
+            [&os](ILStructType const &inner) {
+                os << inner.name;
             } },
         type);
     return os;
@@ -258,7 +267,7 @@ std::wostream &operator<<(std::wostream &os, CallDef const &impl)
     os << "    ";
     if (!std::holds_alternative<ILBaseType>(impl.target.type)
         || std::get<ILBaseType>(impl.target.type) != ILBaseType::V) {
-        os << impl.target << " = " << targettype(impl.target.type) << ' ';
+        os << impl.target << " = " << returntype(impl.target.type) << ' ';
     }
     std::wstring_view n { impl.name };
     if (auto colon = n.rfind(L':'); colon != std::wstring_view::npos) {
@@ -276,8 +285,8 @@ std::wostream &operator<<(std::wostream &os, CallDef const &impl)
                 [&os](ILBaseType const &bt) {
                     os << must_extend(bt);
                 },
-                [&os](std::wstring const &t) {
-                    os << t;
+                [&os](ILStructType const &t) {
+                    os << t.name;
                 } },
             arg.type);
         os << " " << arg;

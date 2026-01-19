@@ -370,6 +370,29 @@ bool Type::compatible(pType const &other) const
         left->description, right->description);
 }
 
+bool Type::assignable_to(pType const &lhs) const
+{
+    if (id == lhs) {
+        return true;
+    }
+    auto rhs = id;
+    return std::visit(
+        overloads {
+            [](OptionalType const &, VoidType const &) -> bool {
+                return true;
+            },
+            [](BoolType const &, OptionalType const &) -> bool {
+                return true;
+            },
+            [this, &rhs](OptionalType const &optional, auto const &) -> bool {
+                return optional.type == rhs;
+            },
+            [this, &lhs](auto const &, auto const &) -> bool {
+                return false;
+            } },
+        lhs->description, description);
+}
+
 pType Type::value_type() const
 {
     auto val_type { id };
@@ -585,7 +608,7 @@ pType TypeRegistry::optional_of(pType type)
             return t.id;
         }
     }
-    auto ret = make_type(std::format(L"{}?", type->name), OptionalType { type });
+    auto ret = make_type(std::format(L"?{}", type->name), OptionalType { type });
     return ret;
 }
 

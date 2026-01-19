@@ -50,7 +50,18 @@ namespace QBEType {
 
 ILType qbe_type(IntType const &descr, pType const &)
 {
-    return (descr.width_bits < 64) ? ILBaseType::W : ILBaseType::L;
+    switch (descr.width_bits) {
+    case 8:
+        return (descr.is_signed) ? ILBaseType::SB : ILBaseType ::UB;
+    case 16:
+        return (descr.is_signed) ? ILBaseType::SH : ILBaseType ::UH;
+    case 32:
+        return (descr.is_signed) ? ILBaseType::UW : ILBaseType ::UW;
+    case 64:
+        return ILBaseType::L;
+    default:
+        UNREACHABLE();
+    }
 }
 
 ILType qbe_type(BoolType const &, pType const &)
@@ -794,11 +805,81 @@ static void assign(ILValue const &lhs, ILValue const &rhs, QBEContext &ctx)
         rhs.inner);
 }
 
-static GenResult assign(ILValue const &lhs, ASTNode const &rhs, QBEContext &ctx)
+static GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, QBEContext &ctx)
 {
     auto rhs_value { TRY_GENERATE(rhs, ctx) };
-    assign(lhs, rhs_value.value, ctx);
-    return lhs;
+    std::visit(
+        overloads {
+            [&ctx, &lhs, &rhs_value](OptionalType const &lhs_opt, OptionalType const &rhs_opt) {
+                assert(lhs_opt.type == rhs_opt.type);
+                assign(lhs.value, rhs_value.value, ctx);
+            },
+            [&ctx, &lhs](OptionalType const &optional, VoidType const &) {
+                auto flag_ptr = ILValue::local(++ctx.next_var, ILBaseType::L);
+                ctx.add_operation(
+                    ExprDef {
+                        lhs.value,
+                        ILValue::integer(optional.type->size_of(), ILBaseType::L),
+                        ILOperation::Add,
+                        flag_ptr,
+                    });
+                ctx.add_operation(
+                    StoreDef {
+                        ILValue::integer(0, ILBaseType::B),
+                        flag_ptr,
+                    });
+            },
+            [&ctx, &lhs, &rhs_value](OptionalType const &optional, auto const &) {
+                assign(lhs.value, rhs_value.value, ctx);
+                auto flag_ptr = ILValue::local(++ctx.next_var, ILBaseType::L);
+                ctx.add_operation(
+                    ExprDef {
+                        lhs.value,
+                        ILValue::integer(optional.type->size_of(), ILBaseType::L),
+                        ILOperation::Add,
+                        flag_ptr,
+                    });
+                ctx.add_operation(
+                    StoreDef {
+                        ILValue::integer(1, ILBaseType::B),
+                        flag_ptr,
+                    });
+            },
+            [&ctx, &lhs, &rhs_value](auto const &, auto const &) {
+                assign(lhs.value, rhs_value.value, ctx);
+            } },
+        lhs.node->bound_type->description, rhs->bound_type->description);
+    return lhs.value;
+}
+
+static GenResult cast(QBEOperand value, pType const &target_type, QBEContext &ctx)
+{
+    if (value.node->bound_type == target_type) {
+        return value.value;
+    }
+    return std::visit(
+        overloads {
+            [&ctx, &value](OptionalType const &optional, BoolType const &) -> GenResult {
+                auto flag_ptr = ILValue::local(++ctx.next_var, ILBaseType::L);
+                auto ret_value = ILValue::local(++ctx.next_var, ILBaseType::SB);
+                ctx.add_operation(
+                    ExprDef {
+                        value.value,
+                        ILValue::integer(optional.type->size_of(), ILBaseType::L),
+                        ILOperation::Add,
+                        flag_ptr,
+                    });
+                ctx.add_operation(
+                    LoadDef {
+                        flag_ptr,
+                        ret_value,
+                    });
+                return ret_value;
+            },
+            [](auto const &, auto const &) -> GenResult {
+                return std::unexpected(L"Invalid cast in QBE");
+            } },
+        value.node->bound_type->description, target_type->description);
 }
 
 template<class Node>
@@ -814,7 +895,7 @@ GenResult generate_qbe_node(ASTNode const &n, BinaryExpression const &impl, QBEC
     auto        rhs_value_type { rhs_type->value_type() };
 
     if (impl.op == Operator::Assign) {
-        return assign(TRY_GENERATE(impl.lhs, ctx).value, impl.rhs, ctx);
+        return assign(TRY_GENERATE(impl.lhs, ctx), impl.rhs, ctx);
     }
     QBEOperand lhs_operand { TRY_GENERATE(impl.lhs, ctx) };
     QBEOperand rhs_operand = { ILValue::null(), impl.rhs };
@@ -1063,7 +1144,7 @@ std::wostream &operator<<(std::wostream &os, ILFunction const &function)
     if (function.exported) {
         os << "export ";
     }
-    os << "function " << function.return_type << " $" << function.name << '(';
+    os << "function " << basetype(function.return_type) << " $" << function.name << '(';
     auto first = true;
     for (auto const &param : function.parameters) {
         if (!first) {
@@ -1073,7 +1154,7 @@ std::wostream &operator<<(std::wostream &os, ILFunction const &function)
         std::visit(
             overloads {
                 [&os](ILBaseType const &bt) {
-                    os << bt;
+                    os << must_extend(bt);
                 },
                 [&os](std::wstring const &t) {
                     os << t;
@@ -1119,6 +1200,13 @@ GenResult generate_qbe_node(ASTNode const &n, IfStatement const &impl, QBEContex
         cond_false = else_block;
     }
     auto condition_var = TRY_GENERATE(impl.condition, ctx);
+    if (impl.condition->bound_type != TypeRegistry::boolean) {
+        if (auto res = cast(condition_var, TypeRegistry::boolean, ctx); !res.has_value()) {
+            return res;
+        } else {
+            condition_var = QBEOperand { res.value(), n };
+        }
+    }
     ctx.add_operation(
         JnzDef {
             condition_var.value,
@@ -1337,7 +1425,7 @@ GenResult generate_qbe_node(ASTNode const &n, VariableDeclaration const &impl, Q
             var_ref,
         });
     if (impl.initializer != nullptr) {
-        return assign(var_ref, impl.initializer, ctx);
+        return assign({ var_ref, n }, impl.initializer, ctx);
     }
     return var_ref;
 }
@@ -1362,6 +1450,13 @@ GenResult generate_qbe_node(ASTNode const &n, WhileStatement const &impl, QBECon
     auto end_loop = ++ctx.next_label;
     ctx.add_operation(LabelDef { top_loop });
     auto condition_var = TRY_GENERATE(impl.condition, ctx);
+    if (impl.condition->bound_type != TypeRegistry::boolean) {
+        if (auto res = cast(condition_var, TypeRegistry::boolean, ctx); !res.has_value()) {
+            return res;
+        } else {
+            condition_var = QBEOperand { res.value(), n };
+        }
+    }
     ctx.add_operation(
         JnzDef {
             condition_var.value,

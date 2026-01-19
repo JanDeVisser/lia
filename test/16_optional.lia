@@ -1,0 +1,18 @@
+public func main() i32 {
+    x := 0
+    while x < 10 {
+        putint(x)
+        o: ?i64
+        if ((x % 2) == 0) {
+            o = x
+        } else {
+            o = null
+        }
+        if o {
+            puts(" even")
+        }
+        endln()
+        x = x + 1
+    }
+    return 0::i32
+}

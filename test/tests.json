@@ -13,5 +13,6 @@
   "12_cstring",
   "13_bool_unary",
   "14_struct",
-  "15_braced_initializer"
+  "15_braced_initializer",
+  "16_optional"
 ]

@@ -165,6 +165,7 @@ struct Value {
     Value(bool val);
     Value(void *val);
     Value(Atom atom);
+    Value(std::nullptr_t);
 
     Value(pType const &type, Atom val)
         : type(type)

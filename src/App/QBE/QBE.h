@@ -63,6 +63,8 @@ std::wostream &operator<<(std::wostream &os, ILBaseType const &type);
 std::wostream &operator<<(std::wostream &os, ILType const &type);
 
 ILBaseType basetype(ILType const &type);
+ILBaseType must_extend(ILType const &type);
+ILBaseType targettype(ILType const &type);
 int        align_of(ILType const &type);
 int        size_of(ILType const &type);
 

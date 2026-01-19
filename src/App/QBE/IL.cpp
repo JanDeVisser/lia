@@ -22,6 +22,59 @@ ILBaseType basetype(ILType const &type)
         type);
 }
 
+ILBaseType must_extend(ILType const &type)
+{
+    return std::visit(
+        overloads {
+            [](ILBaseType const &base_type) -> ILBaseType {
+                switch (base_type) {
+                case ILBaseType::B:
+                case ILBaseType::SB:
+                    return ILBaseType::SB;
+                case ILBaseType::UB:
+                    return ILBaseType::UB;
+                case ILBaseType::H:
+                case ILBaseType::SH:
+                    return ILBaseType::SH;
+                case ILBaseType::UH:
+                    return ILBaseType::UH;
+                case ILBaseType::W:
+                case ILBaseType::SW:
+                case ILBaseType::UW:
+                    return ILBaseType::W;
+                case ILBaseType::L:
+                    return ILBaseType::L;
+                default:
+                    UNREACHABLE();
+                }
+            },
+            [](auto const &) -> ILBaseType {
+                UNREACHABLE();
+            } },
+        type);
+}
+
+ILBaseType targettype(ILType const &type)
+{
+    return std::visit(
+        overloads {
+            [](ILBaseType const &base_type) -> ILBaseType {
+                switch (base_type) {
+                case ILBaseType::L:
+                case ILBaseType::S:
+                case ILBaseType::D:
+                case ILBaseType::W:
+                    return base_type;
+                default:
+                    return ILBaseType::W;
+                }
+            },
+            [](auto const &) -> ILBaseType {
+                UNREACHABLE();
+            } },
+        type);
+}
+
 int align_of(ILBaseType const &type)
 {
     switch (type) {
@@ -205,7 +258,7 @@ std::wostream &operator<<(std::wostream &os, CallDef const &impl)
     os << "    ";
     if (!std::holds_alternative<ILBaseType>(impl.target.type)
         || std::get<ILBaseType>(impl.target.type) != ILBaseType::V) {
-        os << impl.target << " = " << impl.target.type << ' ';
+        os << impl.target << " = " << targettype(impl.target.type) << ' ';
     }
     std::wstring_view n { impl.name };
     if (auto colon = n.rfind(L':'); colon != std::wstring_view::npos) {
@@ -221,7 +274,7 @@ std::wostream &operator<<(std::wostream &os, CallDef const &impl)
         std::visit(
             overloads {
                 [&os](ILBaseType const &bt) {
-                    os << basetype(bt);
+                    os << must_extend(bt);
                 },
                 [&os](std::wstring const &t) {
                     os << t;
@@ -244,7 +297,7 @@ std::wostream &operator<<(std::wostream &os, CastDef const &impl)
 
 std::wostream &operator<<(std::wostream &os, CopyDef const &impl)
 {
-    os << "    " << impl.target << " = " << impl.target.type << " copy " << impl.expr;
+    os << "    " << impl.target << " = " << targettype(impl.target.type) << " copy " << impl.expr;
     return os;
 }
 
@@ -275,7 +328,7 @@ std::wostream &operator<<(std::wostream &os, ExprDef const &impl)
     if (impl.op >= ILOperation::Equals) {
         op << basetype(impl.lhs.type);
     }
-    os << "    " << impl.target << " = " << impl.target.type << " " << op.str() << " " << impl.lhs << ", " << impl.rhs;
+    os << "    " << impl.target << " = " << targettype(impl.target.type) << " " << op.str() << " " << impl.lhs << ", " << impl.rhs;
     return os;
 }
 
@@ -305,7 +358,7 @@ std::wostream &operator<<(std::wostream &os, LabelDef const &impl)
 
 std::wostream &operator<<(std::wostream &os, LoadDef const &impl)
 {
-    os << "    " << impl.target << " = " << impl.target.type << " load" << impl.target.type << " " << impl.pointer;
+    os << "    " << impl.target << " = " << targettype(impl.target.type) << " load" << impl.target.type << " " << impl.pointer;
     return os;
 }
 

@@ -1,8 +1,5 @@
-func x(i: i64) u32
-{
-   y = loop {
-      4+2
-      if (z) break;
-      3.14*2
-   }
+public func main() i32 {
+    x: ?i32 = 0::i32
+    x = null
+    return 0::i32
 }

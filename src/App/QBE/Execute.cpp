@@ -48,13 +48,13 @@ pType type_from_qbe_type(ILBaseType const &t)
     }
 }
 
-pType type_from_qbe_type(std::wstring const &t)
+pType type_from_qbe_type(ILStructType const &t)
 {
-    trace(L"type_from_qbe_type `{}`", t);
-    if (t == L":slice_t") {
+    trace(L"type_from_qbe_type `{}`", t.name);
+    if (t.name == L":slice_t") {
         return TypeRegistry::string;
     }
-    UNREACHABLE();
+    return TypeRegistry::pointer;
 }
 
 pType type_from_qbe_type(ILType t)

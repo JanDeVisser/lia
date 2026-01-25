@@ -57,6 +57,11 @@ pType type_from_qbe_type(ILStructType const &t)
     return TypeRegistry::pointer;
 }
 
+pType type_from_qbe_type(std::monostate const &)
+{
+    return TypeRegistry::void_;
+}
+
 pType type_from_qbe_type(ILType t)
 {
     return std::visit(
@@ -68,8 +73,18 @@ pType type_from_qbe_type(ILType t)
 
 bool is_pointer(ILValue const &value)
 {
-    return std::holds_alternative<ILBaseType>(value.type)
-        && (std::get<ILBaseType>(value.type) == ILBaseType::L);
+    return std::visit(
+        overloads {
+            [](std::monostate const &) -> bool {
+                return false;
+            },
+            [](ILBaseType const &bt) -> bool {
+                return bt == ILBaseType::L;
+            },
+            [](ILStructType const &st) -> bool {
+                return true;
+            } },
+        value.type);
 }
 
 intptr_t Frame::allocate(size_t bytes, size_t alignment)
@@ -148,12 +163,10 @@ void assign(pFrame const &frame, ILValue const &val_ref, Value const &v)
                 frame->locals[local.var] = v;
             },
             [frame, &v](ILValue::Variable const &variable) {
-                trace(L"{} -> %{}$", v.to_string(), variable.name);
-                frame->variables[variable.name] = v;
+                frame->variables[variable.name()] = v;
             },
             [frame, &v](ILValue::Parameter const &parameter) {
-                trace(L"{} -> %{}$", v.to_string(), parameter.name);
-                frame->variables[parameter.name] = v;
+                frame->variables[parameter.name()] = v;
             },
             [](auto const &inner) {
                 UNREACHABLE();
@@ -173,22 +186,30 @@ Value get(pFrame const &frame, ILValue const &val_ref)
                 trace(L"{} <- %v{}", v.to_string(), local.var);
                 return frame->locals[local.var];
             },
+            [&frame](ILValue::Env const &env) -> Value {
+                if (frame->locals.size() < env.local.var + 1) {
+                    fatal("No local value with id `{}`in frame", env.local.var);
+                }
+                auto v = frame->locals[env.local.var];
+                trace(L"{} <- %v{}", v.to_string(), env.local.var);
+                return frame->locals[env.local.var];
+            },
             [&frame](ILValue::Variable const &variable) -> Value {
-                if (frame->variables.contains(variable.name)) {
-                    auto v = frame->variables[variable.name];
-                    trace(L"{} <- %{}$", v.to_string(), variable.name);
+                if (frame->variables.contains(variable.name())) {
+                    auto v = frame->variables[variable.name()];
+                    trace(L"{} <- %{}$", v.to_string(), variable.name());
                     return v;
                 }
-                fatal(L"No variable with name `{}` in frame", variable.name);
+                fatal(L"No variable with name `{}` in frame", variable.name());
                 return {};
             },
             [&frame](ILValue::Parameter const &param) -> Value {
-                if (frame->arguments.contains(param.name)) {
-                    auto v = frame->arguments[param.name];
-                    trace(L"{} <- %{}$$", v.to_string(), param.name);
+                if (frame->arguments.contains(param.name())) {
+                    auto v = frame->arguments[param.name()];
+                    trace(L"{} <- %{}$$", v.to_string(), param.name());
                     return v;
                 }
-                fatal(L"No argument with name `{}` in frame", param.name);
+                fatal(L"No parameter with name `{}` in frame", param.name());
                 return {};
             },
             [&frame](ILValue::Global const &global) -> Value {
@@ -209,7 +230,7 @@ Value get(pFrame const &frame, ILValue const &val_ref)
                 return { dbl_val };
             },
             [](auto const &inner) -> Value {
-                UNREACHABLE();
+                fatal("Value get({})", typeid(decltype(inner)).name());
             } },
         val_ref.inner);
     if (ret.type == TypeRegistry::boolean) {
@@ -305,7 +326,9 @@ ExecResult execute(ILFunction const &il, pFrame const &frame, AllocDef const &in
 template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, BlitDef const &instruction)
 {
-    assert(is_pointer(instruction.src) && is_pointer(instruction.dest));
+    std::wcerr << instruction << "\n";
+    assert(is_pointer(instruction.src));
+    assert(is_pointer(instruction.dest));
     auto src = frame->ptr(get(frame, instruction.src));
     auto dest = frame->ptr(get(frame, instruction.dest));
     for (auto ix = 0; ix < instruction.bytes; ++ix) {
@@ -437,7 +460,8 @@ template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, RetDef const &instruction)
 {
     if (instruction.expr) {
-        return std::unexpected(get(frame, instruction.expr.value(), il.return_type));
+        auto retval { instruction.expr.value() };
+        return std::unexpected(get(frame, retval, retval.type));
     }
     return std::unexpected(Value {});
 }
@@ -464,8 +488,11 @@ ExecResult execute(ILFunction const &il, pFrame const &frame, ILInstruction cons
 ExecutionResult execute_qbe(VM &vm, ILFile const &file, ILFunction const &function, std::vector<Value> const &args)
 {
     auto frame { vm.new_frame(file, function) };
-    for (auto const &[arg, param] : std::ranges::views::zip(args, function.parameters)) {
-        frame->arguments[param.name] = arg;
+    int  offset { 0 };
+    for (auto const &[ix, arg] : std::ranges::views::enumerate(args)) {
+        std::wstring name;
+        name = function.parameters[ix - offset].name;
+        frame->arguments[name] = arg;
     }
     for (auto const &[ix, s] : std::ranges::views::enumerate(file.strings)) {
         auto n = std::format(L"str_{}", ix + 1);
@@ -497,7 +524,7 @@ ExecutionResult execute_qbe(VM &vm, ILFile const &file, ILFunction const &functi
         } else {
             if (frame->ip >= function.instructions.size()) {
                 vm.release(base_pointer);
-                return get(frame, res.value(), function.return_type);
+                return get(frame, res.value(), res.value().type);
             }
         }
     }

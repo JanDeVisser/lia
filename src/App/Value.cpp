@@ -368,7 +368,6 @@ Atom evaluate_Modulo(Atom const &lhs, Atom const &rhs)
     return std::visit(
         overloads {
             [](std::integral auto lhs_value, std::integral auto rhs_value) -> Atom {
-                info("{} Mod {} = {} {}", lhs_value, rhs_value, lhs_value % rhs_value, typeid(decltype(lhs_value % rhs_value)).name());
                 return Atom { lhs_value % rhs_value };
             },
             [](std::integral auto lhs_value, std::floating_point auto rhs_value) -> Atom {
@@ -955,7 +954,6 @@ Value evaluate(Value const &lhs, Operator op, Value const &rhs)
     }
     auto ret = evaluate_on_atoms(lhs, op, rhs);
     s << ' ' << ret.to_string();
-    info(L"{}", s.str());
     return ret;
 }
 

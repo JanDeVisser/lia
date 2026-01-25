@@ -6,7 +6,9 @@
 
 #pragma once
 
+#include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <ostream>
 #include <string>
 #include <variant>
@@ -20,6 +22,14 @@
 namespace Lia::QBE {
 
 using namespace Util;
+namespace fs = std::filesystem;
+
+#define QBE_ASSERT(expr, ctx)                                            \
+    do {                                                                 \
+        if (!(expr)) {                                                   \
+            fatal("{}:{} Assertion failed: " #expr, __FILE__, __LINE__); \
+        }                                                                \
+    } while (0)
 
 enum class LocalType {
     Unknown,
@@ -63,7 +73,7 @@ struct ILStructType {
     intptr_t     size;
 };
 
-using ILType = std::variant<ILBaseType, ILStructType>;
+using ILType = std::variant<std::monostate, ILBaseType, ILStructType>;
 
 std::wostream &operator<<(std::wostream &os, ILBaseType const &type);
 std::wostream &operator<<(std::wostream &os, ILType const &type);
@@ -71,9 +81,12 @@ std::wostream &operator<<(std::wostream &os, ILType const &type);
 ILBaseType basetype(ILType const &type);
 ILBaseType must_extend(ILType const &type);
 ILBaseType targettype(ILType const &type);
-ILType     returntype(ILType const &type);
 int        align_of(ILType const &type);
 int        size_of(ILType const &type);
+bool       qbe_first_class_type(pType const &type);
+ILBaseType qbe_type_code(pType const &type);
+ILBaseType qbe_load_code(pType const &type);
+ILType     qbe_type(pType const &type);
 
 enum class ILInstructionType {
     Alloc,
@@ -125,11 +138,25 @@ enum class ILOperation {
 
 struct ILValue {
     struct Variable {
-        std::wstring name;
+        int depth;
+        int index;
+
+        std::wstring name() const
+        {
+            return std::format(L"var_{}.{}", depth, index);
+        }
     };
 
     struct Parameter {
-        std::wstring name;
+        int index;
+
+        std::wstring name() const
+        {
+            return std::format(L"param_{}", index);
+        }
+    };
+
+    struct ReturnValue {
     };
 
     struct Global {
@@ -140,14 +167,20 @@ struct ILValue {
         std::wstring literal;
     };
 
+    struct Env {
+        Local local;
+    };
+
     using ILValueInner = std::variant<
         Local,
         Global,
         Literal,
         Variable,
         Parameter,
+        ReturnValue,
         int64_t,
         double,
+        Env,
         std::vector<ILValue>>;
 
     template<typename TypeDesc>
@@ -176,15 +209,15 @@ struct ILValue {
     }
 
     template<typename TypeDesc>
-    static ILValue variable(std::wstring name, TypeDesc td)
+    static ILValue variable(int depth, int index, TypeDesc td)
     {
-        return { ILType { std::move(td) }, Variable { std::move(name) } };
+        return { ILType { std::move(td) }, Variable { depth, index } };
     }
 
     template<typename TypeDesc>
-    static ILValue parameter(std::wstring name, TypeDesc td)
+    static ILValue parameter(int index, TypeDesc td)
     {
-        return { ILType { std::move(td) }, Parameter { std::move(name) } };
+        return { ILType { std::move(td) }, Parameter { index } };
     }
 
     static ILValue string(int str_id)
@@ -216,9 +249,21 @@ struct ILValue {
         return { ILType { ILBaseType::V }, std::move(values) };
     }
 
+    static ILValue env(ILValue const &val)
+    {
+        assert(std::holds_alternative<Local>(val.inner));
+        return { val.type, Env { std::get<Local>(val.inner) } };
+    }
+
+    template<typename TypeDesc>
+    static ILValue return_value(TypeDesc td)
+    {
+        return { ILType { std::move(td) }, ReturnValue {} };
+    }
+
     static ILValue null()
     {
-        return { ILBaseType::V, 0 };
+        return { std::monostate {}, 0 };
     }
 
     ILType       type;
@@ -230,6 +275,24 @@ using ILValues = std::vector<ILValue>;
 std::wostream &operator<<(std::wostream &os, ILValue const &value);
 std::wostream &operator<<(std::wostream &os, ILOperation const &op);
 
+struct QBEOperand {
+    ILValue value;
+    ASTNode node;
+};
+
+struct QBEBinExpr {
+    QBEOperand lhs;
+    Operator   op;
+    QBEOperand rhs;
+};
+
+struct QBEUnaryExpr {
+    Operator   op;
+    QBEOperand operand;
+};
+
+using GenResult = std::expected<ILValue, std::wstring>;
+
 struct AllocDef {
     size_t  alignment;
     size_t  bytes;
@@ -239,9 +302,9 @@ struct AllocDef {
 };
 
 struct BlitDef {
-    ILValue src;
-    ILValue dest;
-    size_t  bytes;
+    ILValue  src;
+    ILValue  dest;
+    intptr_t bytes;
 
     friend std::wostream &operator<<(std::wostream &os, BlitDef const &impl);
 };
@@ -386,21 +449,34 @@ template<class N>
 concept ir_node = std::is_same_v<N, ILFile>
     || std::is_same_v<N, ILFunction>;
 
-struct ILParameter {
+struct ILBinding {
     std::wstring name;
-    ILType       type;
+    pType        type;
+    int          depth;
+    int          index;
 };
+
+using ILBindings = std::vector<ILBinding>;
+using ILBindingStack = std::vector<ILBindings>;
 
 struct ILFunction {
     size_t                     file_id;
     std::wstring               name;
-    ILType                     return_type;
+    pType                      return_type;
     bool                       exported { false };
+    intptr_t                   ret_allocation { 0 };
     size_t                     id;
-    std::vector<ILParameter>   parameters;
+    ILBindings                 parameters {};
+    ILBindingStack             variables {};
     std::vector<ILInstruction> instructions;
     std::vector<size_t>        labels;
-    friend std::wostream      &operator<<(std::wostream &os, ILFunction const &function);
+
+    std::optional<ILBinding> find(std::wstring_view name);
+    ILBinding const         &add(std::wstring_view name, pType const &type);
+    ILBinding const         &add_parameter(std::wstring_view name, pType const &type);
+    void                     push();
+    void                     pop();
+    friend std::wostream    &operator<<(std::wostream &os, ILFunction const &function);
 };
 
 struct ILFile {
@@ -421,6 +497,27 @@ struct ILProgram {
 };
 
 using ILVariables = std::map<std::wstring, Value>;
+
+struct QBEContext {
+    int       next_label;
+    int       next_var;
+    fs::path  file_name;
+    bool      is_export { false };
+    ILProgram program {};
+    size_t    current_file;
+    size_t    current_function;
+
+    ILValue                  add_string(std::wstring_view s);
+    ILValue                  add_cstring(std::string_view s);
+    ILType                   qbe_type(pType const &type);
+    void                     add_operation(ILInstructionImpl impl);
+    std::optional<ILBinding> find(std::wstring_view name);
+    ILBinding const         &add(std::wstring_view name, pType const &type);
+    ILBinding const         &add_parameter(std::wstring_view name, pType const &type);
+    void                     push();
+    void                     pop();
+    ILFunction              &function();
+};
 
 struct Frame {
     struct VM         &vm;
@@ -462,6 +559,9 @@ struct VM {
 
 using ExecutionResult = std::expected<Value, std::wstring>;
 
+ILValue                                dereference(QBEOperand const &operand, QBEContext &ctx);
+GenResult                              qbe_operator(QBEBinExpr const &expr, QBEContext &ctx);
+GenResult                              qbe_operator(QBEUnaryExpr const &expr, QBEContext &ctx);
 std::expected<ILProgram, std::wstring> generate_qbe(ASTNode const &node);
 std::expected<void, std::wstring>      compile_qbe(ILProgram const &program);
 ExecutionResult                        execute_qbe(VM &vm, ILFile const &file, ILFunction const &function, std::vector<Value> const &args);

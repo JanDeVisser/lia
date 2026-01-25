@@ -108,6 +108,7 @@ add_library(
     src/App/QBE/Execute.cpp
     src/App/QBE/IL.cpp
     src/App/QBE/Native.cpp
+    src/App/QBE/Operator.cpp
     src/App/QBE/QBE.cpp
 )
 

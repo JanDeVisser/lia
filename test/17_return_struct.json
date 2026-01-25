@@ -1,0 +1,11 @@
+{
+  "name": "17_return_struct",
+  "comptime_stdout": [],
+  "comptime_stderr": [],
+  "stdout": [
+    "420"
+  ],
+  "stderr": [],
+  "exit": 0,
+  "args": []
+}

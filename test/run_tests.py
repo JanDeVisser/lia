@@ -128,7 +128,7 @@ def test_eval(name, script):
         print("\033[31m[FAILED]\033[0m ", end="\r\n")
         print(error)
 
-    return error == 0
+    return len(error) == 0
 
 
 def test_script(name):
@@ -146,17 +146,17 @@ def test_script(name):
         print("\033[93m[  XX  ] [  XX  ]\033[0m ", end="")
     if ok:
         if "no-eval" not in script:
-            test_eval(name, script)
+            ok = test_eval(name, script)
         else:
             print("\033[93m[  XX  ]\033[0m ", end="\r\n")
-    return True
+    return ok
 
 
-def run_tests(names):
+def run_tests(names, break_on_failure):
     print("                         Comptime Compiled   Eval")
     print("===================================================")
     for n in names:
-        if not test_script(n):
+        if not test_script(n) and break_on_failure:
             break
 
 
@@ -169,8 +169,8 @@ def load_test_names():
     return scripts
 
 
-def run_all_tests():
-    run_tests(load_test_names())
+def run_all_tests(break_on_failure):
+    run_tests(load_test_names(), break_on_failure)
 
 
 def config_test(name, *args):
@@ -264,73 +264,123 @@ def initialize():
 
 
 initialize()
-arg_parser = argparse.ArgumentParser()
-group = arg_parser.add_mutually_exclusive_group(required=True)
-group.add_argument(
-    "-i",
-    "--index",
+
+arg_parser = argparse.ArgumentParser(
+    prog="run_tests", description="lia language test runner"
+)
+
+subparsers = arg_parser.add_subparsers(
+    title="Commands",
+    required=True,
+    dest="cmd",
+)
+
+index_tests = subparsers.add_parser(
+    "index",
+    help="Displays an index of all registered tests. Output can be used by run_tests add-all",
+)
+
+run_all = subparsers.add_parser(
+    "all",
+    help="Execute all tests in the registry",
+)
+
+run_all.add_argument(
+    "-b",
+    "--break-on-failure",
     action="store_true",
-    help="Displays an index of all registered tests. Output can be used by -f/--add-all",
+    help="Break on test failure",
 )
-group.add_argument(
-    "-a", "--execute-all", action="store_true", help="Execute all tests in the registry"
+
+run_some = subparsers.add_parser(
+    "some",
+    help="Execute the specified tests",
 )
-group.add_argument(
-    "-x", "--execute", nargs="+", metavar="Test", help="Execute the specified tests"
+
+run_some.add_argument(
+    "-b",
+    "--break-on-failure",
+    action="store_true",
+    help="Break on test failure",
 )
-group.add_argument(
-    "-c",
-    "--create",
+
+run_some.add_argument(
+    "test",
     nargs="+",
-    metavar=("Test", "Argument"),
+    help="Test(s) to run",
+)
+
+create_tests = subparsers.add_parser(
+    "create",
     help="Add the specified test script with optional arguments to the test registry, and executes them",
 )
-group.add_argument(
-    "-f",
-    "--add-all",
-    metavar="File",
+
+create_tests.add_argument(
+    "test",
+    nargs="+",
+    help="Test(s) to create",
+)
+
+add_all = subparsers.add_parser(
+    "add-all",
     help="Add all tests in <File>. <File> should contain test script names, one per line",
 )
-group.add_argument(
-    "-d",
-    "--delete",
-    nargs="+",
-    metavar="Test",
+
+add_all.add_argument(
+    "tests",
+    nargs=1,
+    help="File containing tests to create. One per line",
+)
+
+delete_tests = subparsers.add_parser(
+    "delete",
     help="Remove the specified tests from the registry. The expected outcome .json files will be retained",
 )
-group.add_argument(
-    "--destroy",
+
+delete_tests.add_argument(
+    "test",
     nargs="+",
-    metavar="Test",
+    help="Test(s) to delete",
+)
+
+destroy_tests = subparsers.add_parser(
+    "destroy",
     help="Remove the specified tests from the registry. The expected outcome .json files will be deleted as well",
 )
-group.add_argument(
-    "--clear",
-    action="store_true",
+
+destroy_tests.add_argument(
+    "test",
+    nargs="+",
+    help="Test(s) to destroy",
+)
+
+clear_reg = subparsers.add_parser(
+    "clear",
     help="Clear the test registry. The expected outcome .json files will be retained",
 )
-group.add_argument(
-    "--nuke",
-    action="store_true",
+
+nuke = subparsers.add_parser(
+    "nuke",
     help="Clear the test registry. The expected outcome .json files will be deleted as well",
 )
+
 args = arg_parser.parse_args()
 
-if args.execute_all:
-    run_all_tests()
-if args.execute:
-    run_tests(args.execute)
-if args.create:
-    config_test(args.create[0], *args.create[1:])
-if args.add_all:
-    config_tests(args.add_all)
-if args.delete:
-    for name in args.delete:
+if args.cmd == "all":
+    run_all_tests(args.break_on_failure)
+if args.cmd == "some":
+    run_tests(args.test, args.break_on_failure)
+if args.cmd == "create":
+    config_test(args.test[0], *args.test[1:])
+if args.cmd == "add-all":
+    config_tests(args.tests)
+if args.cmd == "delete":
+    for name in args.test:
         remove_test(name)
-if args.destroy:
-    for name in args.destroy:
+if args.cmd == "destroy":
+    for name in args.test:
         remove_test(name, True)
-if args.clear or args.nuke:
-    remove_all_tests(args.nuke)
-if args.index:
+if args.cmd == "clear" or args.cmd == "nuke":
+    remove_all_tests(args.cmd == "nuke")
+if args.cmd == "index":
     print_index()

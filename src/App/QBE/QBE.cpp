@@ -35,16 +35,6 @@
 
 namespace Lia::QBE {
 
-Local Local::value(int var)
-{
-    return (var > 0) ? Local { LocalType::Value, var } : Local {};
-}
-
-Local Local::ref(int var)
-{
-    return Local { LocalType::Reference, var };
-}
-
 ILValue QBEContext::add_string(std::wstring_view s)
 {
     auto &file { program.files[current_file] };
@@ -190,26 +180,49 @@ ILValue dereference(QBEOperand const &operand, QBEContext &ctx)
     }
     return std::visit(
         overloads {
-            [&ctx, &value, &operand, &type](Local local) -> ILValue {
-                if (local.type == LocalType::Reference) {
-                    if (qbe_first_class_type(operand.node->bound_type)) {
-                        value = ILValue::local(++ctx.next_var, ctx.qbe_type(type));
-                        ctx.add_operation(
-                            LoadDef {
-                                .pointer = ILValue::local(local.var, ILBaseType::L),
-                                .target = value,
-                            });
-                    }
+            [&ctx, &value, &operand, &type](ILValue::Local local) -> ILValue {
+                return value;
+            },
+            [&ctx, &value, &operand, &type](ILValue::Pointer pointer) -> ILValue {
+                if (is<ReferenceType>(operand.node->bound_type) && qbe_first_class_type(type)) {
+                    auto ret = ILValue::local(++ctx.next_var, ctx.qbe_type(type));
+                    ctx.add_operation(
+                        LoadDef {
+                            .pointer = value,
+                            .target = ret,
+                        });
+                    return ret;
                 }
                 return value;
             },
             [&value, &ctx, &operand, &type](ILValue::Variable variable) -> ILValue {
-                if (qbe_first_class_type(operand.node->bound_type)) {
-                    value = ILValue::local(++ctx.next_var, ctx.qbe_type(type));
+                if (!is<ReferenceType>(operand.node->bound_type) && qbe_first_class_type(type)) {
+                    auto ret = ILValue::local(++ctx.next_var, ctx.qbe_type(type));
                     ctx.add_operation(
                         LoadDef {
-                            .pointer = ILValue::variable(variable.depth, variable.index, ILBaseType::L),
-                            .target = value,
+                            .pointer = value,
+                            .target = ret,
+                        });
+                    return ret;
+                }
+                return value;
+            },
+            [&value, &ctx, &operand, &type](ILValue::Parameter param) -> ILValue {
+                if (is<ReferenceType>(operand.node->bound_type) && qbe_first_class_type(type)) {
+                    auto ret = ILValue::local(++ctx.next_var, ctx.qbe_type(type));
+                    ctx.add_operation(
+                        LoadDef {
+                            .pointer = value,
+                            .target = ret,
+                        });
+                    return ret;
+                }
+                if (qbe_first_class_type(type)) {
+                    auto ret = ILValue::local(++ctx.next_var, ctx.qbe_type(type));
+                    ctx.add_operation(
+                        LoadDef {
+                            .pointer = value,
+                            .target = ret,
                         });
                 }
                 return value;
@@ -220,17 +233,31 @@ ILValue dereference(QBEOperand const &operand, QBEContext &ctx)
         value.inner);
 }
 
-static void assign(ILValue const &lhs, ILValue const &rhs, size_t size, QBEContext &ctx)
+static void raw_assign(ILValue const &lhs, ILValue const &rhs, pType const &type, QBEContext &ctx);
+
+template<class T>
+void raw_assign(ILValue const &lhs, ILValue const &rhs, T const &descr, QBEContext &ctx)
+{
+    ctx.add_operation(
+        StoreDef {
+            rhs,
+            lhs,
+        });
+}
+
+template<>
+void raw_assign(ILValue const &lhs, ILValue const &rhs, StructType const &strukt, QBEContext &ctx)
 {
     std::visit(
         overloads {
-            [&ctx, &lhs](ILValues const &values) {
+            [&ctx, &lhs, &strukt](ILValues const &values) {
                 auto    lhs_ptr { lhs };
                 ILValue prev_lhs;
                 auto    prev_size { 0 };
-                for (auto const &value : values) {
+                for (auto const &[ix, value] : std::ranges::views::enumerate(values)) {
+                    auto const &fld { strukt.fields[ix] };
                     if (prev_size > 0) {
-                        lhs_ptr = ILValue::local(++ctx.next_var, ILBaseType::L);
+                        lhs_ptr = ILValue::pointer(++ctx.next_var);
                         ctx.add_operation(
                             ExprDef {
                                 prev_lhs,
@@ -239,35 +266,40 @@ static void assign(ILValue const &lhs, ILValue const &rhs, size_t size, QBEConte
                                 lhs_ptr,
                             });
                     }
-                    assign(lhs_ptr, value, size_of(value.type), ctx);
+                    raw_assign(lhs_ptr, value, fld.type, ctx);
                     prev_size = size_of(value.type);
                     prev_lhs = lhs_ptr;
                 }
             },
-            [&ctx, &lhs, &rhs, &size](Local const &local) {
-                if (local.type == LocalType::Reference) {
-                    ctx.add_operation(
-                        BlitDef {
-                            rhs,
-                            lhs,
-                            static_cast<intptr_t>(size),
-                        });
-                } else {
-                    ctx.add_operation(
-                        StoreDef {
-                            rhs,
-                            lhs,
-                        });
-                }
-            },
-            [&ctx, &lhs, &rhs](auto const &v) {
+            [&ctx, &lhs, &rhs, &strukt](auto const &pointer) {
                 ctx.add_operation(
-                    StoreDef {
+                    BlitDef {
                         rhs,
                         lhs,
+                        static_cast<intptr_t>(strukt.size_of()),
                     });
             } },
         rhs.inner);
+}
+
+template<>
+void raw_assign(ILValue const &lhs, ILValue const &rhs, OptionalType const &optional, QBEContext &ctx)
+{
+    ctx.add_operation(
+        BlitDef {
+            rhs,
+            lhs,
+            static_cast<intptr_t>(optional.size_of()),
+        });
+}
+
+static void raw_assign(ILValue const &lhs, ILValue const &rhs, pType const &type, QBEContext &ctx)
+{
+    std::visit(
+        [&ctx, &lhs, &rhs](auto const &descr) {
+            raw_assign(lhs, rhs, descr, ctx);
+        },
+        type->description);
 }
 
 GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, size_t size, QBEContext &ctx)
@@ -277,10 +309,10 @@ GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, size_t size, QBECont
         overloads {
             [&ctx, &lhs, &rhs_value, &size](OptionalType const &lhs_opt, OptionalType const &rhs_opt) {
                 assert(lhs_opt.type == rhs_opt.type);
-                assign(lhs.value, rhs_value.value, size, ctx);
+                raw_assign(lhs.value, rhs_value.value, lhs.node->bound_type, ctx);
             },
             [&ctx, &lhs](OptionalType const &optional, VoidType const &) {
-                auto flag_ptr = ILValue::local(++ctx.next_var, ILBaseType::L);
+                auto flag_ptr = ILValue::pointer(++ctx.next_var);
                 ctx.add_operation(
                     ExprDef {
                         lhs.value,
@@ -295,8 +327,8 @@ GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, size_t size, QBECont
                     });
             },
             [&ctx, &lhs, &rhs_value, &size](OptionalType const &optional, auto const &) {
-                assign(lhs.value, rhs_value.value, size, ctx);
-                auto flag_ptr = ILValue::local(++ctx.next_var, ILBaseType::L);
+                raw_assign(lhs.value, rhs_value.value, optional.type, ctx);
+                auto flag_ptr = ILValue::pointer(++ctx.next_var);
                 ctx.add_operation(
                     ExprDef {
                         lhs.value,
@@ -311,7 +343,7 @@ GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, size_t size, QBECont
                     });
             },
             [&ctx, &lhs, &rhs_value, &size](auto const &, auto const &) {
-                assign(lhs.value, rhs_value.value, size, ctx);
+                raw_assign(lhs.value, rhs_value.value, lhs.node->bound_type, ctx);
             } },
         lhs.node->bound_type->description, rhs->bound_type->description);
     return lhs.value;
@@ -325,7 +357,7 @@ GenResult cast(QBEOperand value, pType const &target_type, QBEContext &ctx)
     return std::visit(
         overloads {
             [&ctx, &value](OptionalType const &optional, BoolType const &) -> GenResult {
-                auto flag_ptr = ILValue::local(++ctx.next_var, ILBaseType::L);
+                auto flag_ptr = ILValue::pointer(++ctx.next_var);
                 auto ret_value = ILValue::local(++ctx.next_var, ILBaseType::SB);
                 ctx.add_operation(
                     ExprDef {
@@ -444,21 +476,20 @@ GenResult generate_qbe_node(ASTNode const &n, Call const &impl, QBEContext &ctx)
     }
 
     if (alloc_sz > 0) {
-        ret_alloc = ILValue::local_ref(++ctx.next_var);
+        ret_alloc = ILValue::local(++ctx.next_var, ILBaseType::L);
         ctx.add_operation(AllocDef {
             (alloc_sz < 8) ? 4u : 8u,
             alloc_sz,
             ret_alloc,
         });
-        if (alloc_sz > 8) {
-            args.emplace_back(ILValue::env(ret_alloc));
-        }
     }
 
     for (auto const &[arg, param] : std::ranges::views::zip(get<ExpressionList>(impl.arguments).expressions, decl.parameters)) {
         if (is<ReferenceType>(param->bound_type)) {
             QBE_ASSERT(is<ReferenceType>(arg->bound_type), ctx);
-            args.emplace_back(TRY_GENERATE(arg, ctx).value);
+            auto value = TRY_GENERATE(arg, ctx).value;
+            value.type = ILBaseType::L;
+            args.emplace_back(value);
         } else {
             args.emplace_back(dereference(TRY_GENERATE(arg, ctx), ctx));
         }
@@ -486,6 +517,12 @@ GenResult generate_qbe_node(ASTNode const &n, Call const &impl, QBEContext &ctx)
         ctx.add_operation(StoreDef {
             ret_val,
             ret_alloc,
+        });
+    } else {
+        ctx.add_operation(BlitDef {
+            .src = ret_val,
+            .dest = ret_alloc,
+            .bytes = static_cast<intptr_t>(alloc_sz),
         });
     }
     return ret_alloc;
@@ -548,17 +585,20 @@ GenResult generate_qbe_node(ASTNode const &n, Constant const &impl, QBEContext &
             },
             [&ctx, &impl](ZeroTerminatedArray const &zta) -> ILValue {
                 assert(zta.array_of == TypeRegistry::u8);
-                return ctx.add_cstring(static_cast<char const *>(as<void *>(*impl.bound_value)));
+                return ctx.add_cstring(static_cast<char const *>(as<void const *>(*impl.bound_value)));
             },
             [&ctx, &impl](SliceType const &slice_type) -> ILValue {
                 int var = ++ctx.next_var;
                 assert(slice_type.slice_of == TypeRegistry::u32);
                 auto slice = as<Slice>(*impl.bound_value);
                 auto len_id = ++ctx.next_var;
+                auto ret = ILValue::local(var, ctx.qbe_type(TypeRegistry::string));
                 ctx.add_operation(
                     AllocDef {
-                        16, 16,
-                        ILValue::local(var, ILBaseType::L) });
+                        16,
+                        16,
+                        ret,
+                    });
                 ctx.add_operation(
                     StoreDef {
                         ctx.add_string(
@@ -566,21 +606,21 @@ GenResult generate_qbe_node(ASTNode const &n, Constant const &impl, QBEContext &
                                 static_cast<wchar_t *>(slice.ptr),
                                 static_cast<size_t>(slice.size),
                             }),
-                        ILValue::local(var, ILBaseType::L),
+                        ret,
                     });
                 ctx.add_operation(
                     ExprDef {
-                        ILValue::local(var, ILBaseType::L),
+                        ret,
                         ILValue::integer(8, ILBaseType::L),
                         ILOperation::Add,
-                        ILValue::local(len_id, ILBaseType::L),
+                        ILValue::pointer(len_id),
                     });
                 ctx.add_operation(
                     StoreDef {
                         ILValue::integer(slice.size, ILBaseType::L),
-                        ILValue::local(len_id, ILBaseType::L),
+                        ILValue::pointer(len_id),
                     });
-                return ILValue::local(var, ctx.qbe_type(impl.bound_value->type));
+                return ret;
             },
             [](auto const &descr) -> ILValue {
                 UNREACHABLE();
@@ -642,11 +682,6 @@ GenResult generate_qbe_node(ASTNode const &n, FunctionDeclaration const &impl, Q
     file.has_exports |= function.exported;
     file.has_main = impl.name == L"main";
     function.push();
-    auto first = true;
-    for (auto const &param : impl.parameters) {
-        auto p = get<Parameter>(param);
-        function.parameters.emplace_back(p.name, param->bound_type);
-    }
     ctx.next_var = 0;
     ctx.next_label = 0;
     if (function.ret_allocation > 0) {
@@ -666,41 +701,11 @@ GenResult generate_qbe_node(ASTNode const &n, Identifier const &impl, QBEContext
 {
     auto t = ctx.qbe_type(n->bound_type);
     if (auto binding = ctx.find(impl.identifier); binding) {
-        return std::visit(
-            overloads {
-                [&ctx, &binding](BoolType const &) -> ILValue {
-                    ILValue ret = ILValue::local(++ctx.next_var, ILBaseType::W);
-                    ctx.add_operation(
-                        LoadDef {
-                            ILValue::variable(binding->depth, binding->index, ILBaseType::W),
-                            ret,
-                        });
-                    return ret;
-                },
-                [&ctx, &binding, &t](IntType const &) -> ILValue {
-                    ILValue ret = ILValue::local(++ctx.next_var, t);
-                    ctx.add_operation(
-                        LoadDef {
-                            ILValue::variable(binding->depth, binding->index, t),
-                            ret,
-                        });
-                    return ret;
-                },
-                [&ctx, &binding, &t](FloatType const &) -> ILValue {
-                    ILValue ret = ILValue::local(++ctx.next_var, t);
-                    ctx.add_operation(
-                        LoadDef {
-                            ILValue::variable(binding->depth, binding->index, t),
-                            ret,
-                        });
-                    return ret;
-                },
-                [&binding](auto const &)
-                    -> ILValue {
-                    return ILValue::variable(binding->depth, binding->index, ILBaseType::L);
-                } },
-            n->bound_type->description);
-        return ILValue::variable(binding->depth, binding->index, t);
+        auto b = *binding;
+        if (b.depth == 0) {
+            return ILValue::parameter(b.index, t);
+        }
+        return ILValue::variable(b.depth, b.index, t);
     }
     UNREACHABLE();
 }
@@ -765,7 +770,7 @@ GenResult generate_qbe_node(ASTNode const &n, Parameter const &impl, QBEContext 
     size_t      sz = n->bound_type->size_of();
     auto        align = n->bound_type->align_of();
     auto        param = ILValue::parameter(param_binding.index, ctx.qbe_type(n->bound_type));
-    auto        var = ILValue::variable(binding.depth, binding.index, ILBaseType::L);
+    auto        var = ILValue::variable(binding.depth, binding.index, param.type);
 
     ctx.add_operation(
         AllocDef {
@@ -796,11 +801,16 @@ GenResult generate_qbe_node(ASTNode const &n, Parameter const &impl, QBEContext 
                         var,
                     });
             },
-            [&ctx, &param, &var, &sz, &align](auto const &) {
+            [](std::monostate const &) {
+                UNREACHABLE();
+            },
+            [&ctx, &param_binding, &binding, &align](auto const &descr) {
+                intptr_t sz = static_cast<intptr_t>(descr.size_of());
                 ctx.add_operation(
                     BlitDef {
-                        param,
-                        var,
+                        ILValue::parameter(param_binding.index, ILBaseType::L),
+                        ILValue::variable(binding.depth, binding.index, ILBaseType::L),
+                        sz,
                     });
             },
         },

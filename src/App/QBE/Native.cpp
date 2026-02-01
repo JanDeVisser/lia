@@ -10,10 +10,8 @@
 #include <Util/Logging.h>
 #include <Util/Resolve.h>
 
-#include <App/Type.h>
-#include <App/Value.h>
-
-#include <App/QBE/Native.h>
+#include <App/Parser.h>
+#include <App/QBE/QBE.h>
 
 extern "C" {
 
@@ -29,7 +27,7 @@ struct X86_64Trampoline {
     Lia::void_t fnc { nullptr };
     uint64_t    int_regs[6] { 0, 0, 0, 0, 0, 0 };
     double      float_regs[8] { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-    uint64_t    int_return_value { 0 };
+    uint64_t    int_return_value[2] { 0, 0 };
     double      double_return_value { 0.0 };
 };
 
@@ -69,7 +67,9 @@ void set(void *ptr, T val)
     memcpy(static_cast<char *>(ptr), &val, sizeof(T));
 }
 
-bool native_call_arm64(std::string_view name, void *params, std::vector<pType> const &types, void *return_value, pType const &return_type)
+#if IS_ARM64
+
+bool native_call_arm64(std::string_view name, void *params, std::vector<ILType> const &types, void *return_value, ILType const &return_type)
 {
     if (types.size() > 8) {
         fatal("Can't do native calls with more than 8 parameters");
@@ -395,7 +395,9 @@ bool native_call_arm64(std::string_view name, void *params, std::vector<pType> c
     }
 }
 
-bool native_call_x86_64(std::string_view name, void *params, std::vector<pType> const &types, void *return_value, pType const &return_type)
+#endif
+
+bool native_call_x86_64(std::string_view name, void *params, std::vector<ILType> const &types, void *return_value, ILType const &return_type)
 {
     if (types.size() > 6) {
         fatal("Can't do native calls with more than 6 parameters");
@@ -410,109 +412,74 @@ bool native_call_x86_64(std::string_view name, void *params, std::vector<pType> 
     size_t int_reg = 0;
     size_t float_reg = 0;
 
+    auto allocate_value = [&t, &int_reg, &float_reg](ILBaseType bt, void *from, intptr_t offset) {
+        if (bt <= ILBaseType::L && int_reg >= 6) {
+            fatal("Can only pass arguments in registers now");
+        } else if (float_reg >= 8) {
+            fatal("Can only pass arguments in registers now");
+        }
+        switch (bt) {
+        case ILBaseType::B:
+        case ILBaseType::SB:
+            t.int_regs[int_reg++] = as<int8_t>(from, offset);
+            break;
+        case ILBaseType::UB:
+            t.int_regs[int_reg++] = as<uint8_t>(from, offset);
+            break;
+        case ILBaseType::H:
+        case ILBaseType::SH:
+            t.int_regs[int_reg++] = as<int16_t>(from, offset);
+            break;
+        case ILBaseType::UH:
+            t.int_regs[int_reg++] = as<uint16_t>(from, offset);
+            break;
+        case ILBaseType::W:
+        case ILBaseType::SW:
+            t.int_regs[int_reg++] = as<int32_t>(from, offset);
+            break;
+        case ILBaseType::UW:
+            t.int_regs[int_reg++] = as<uint32_t>(from, offset);
+            break;
+        case ILBaseType::L:
+            t.int_regs[int_reg++] = as<int64_t>(from, offset);
+            break;
+        case ILBaseType::S:
+            t.float_regs[float_reg++] = as<float>(from, offset);
+            break;
+        case ILBaseType::D:
+            t.float_regs[float_reg++] = as<float>(from, offset);
+            break;
+        default:
+            break;
+        }
+    };
+
     intptr_t offset { 0 };
     for (size_t ix = 0; ix < types.size(); ++ix) {
-        pType const &type = types[ix];
+        auto const &type = types[ix];
 
-        trace(L"native_call [{}]: {}", ix, type->name);
-        switch (pType const &et = type; et->kind()) {
-        case TypeKind::FloatType: {
-            if (float_reg < 8) {
-                if (et == TypeRegistry::f32) {
-                    t.float_regs[float_reg] = as<float>(params, offset);
-                } else {
-                    t.float_regs[float_reg] = as<double>(params, offset);
-                }
-                ++float_reg;
-            }
-        } break;
-        case TypeKind::IntType:
-            if (int_reg < 8) {
-                auto int_type = std::get<IntType>(et->description);
-                switch (int_type.width_bits) {
-                case 8:
-                    t.int_regs[int_reg] = (int_type.is_signed) ? as<int8_t>(params, offset) : as<uint8_t>(params, offset);
-                    break;
-                case 16:
-                    t.int_regs[int_reg] = (int_type.is_signed) ? as<int16_t>(params, offset) : as<uint16_t>(params, offset);
-                    break;
-                case 32:
-                    t.int_regs[int_reg] = (int_type.is_signed) ? as<int32_t>(params, offset) : as<uint32_t>(params, offset);
-                    break;
-                case 64:
-                    t.int_regs[int_reg] = (int_type.is_signed) ? as<int64_t>(params, offset) : as<uint64_t>(params, offset);
-                    break;
-                }
-                // #undef S
-                // #define S(W)                            \
-                //     if (et == TypeRegistry::i##W) {     \
-                //         t.int_regs[int_reg] = as<int##W##_t>(v);  \
-                //     }                                   \
-                //     if (et == TypeRegistry::u##W) {     \
-                //         t.int_regs[int_reg] = as<uint##W##_t>(v); \
-                //     }
-                //                 BitWidths(S)
-                // #undef S
-                ++int_reg;
-            }
-            break;
+        std::visit(
+            overloads {
+                [](std::monostate const &) {
+                },
+                [&allocate_value, &offset, &params](ILBaseType const &bt) {
+                    allocate_value(bt, params, offset);
+                    offset += alignat(size_of(bt), 8);
+                },
+                [&allocate_value, &offset, &params](ILStructType const &strukt) {
+                    int   align { 0 };
+                    auto *mem = as<void *>(params, offset);
+                    offset += alignat(sizeof(void *), 8);
 
-        case TypeKind::BoolType:
-            if (int_reg < 8) {
-                t.int_regs[int_reg] = as<bool>(params, offset);
-                ++int_reg;
-            }
-            break;
-
-        case TypeKind::PointerType:
-        case TypeKind::ReferenceType:
-        case TypeKind::ZeroTerminatedArray:
-            if (int_reg < 8) {
-                t.int_regs[int_reg] = reinterpret_cast<intptr_t>(as<void *>(params, offset));
-                ++int_reg;
-            }
-            break;
-
-        case TypeKind::SliceType:
-            if (int_reg < 7) {
-                auto const &[ptr, size] = as<Slice>(params, offset);
-                t.int_regs[int_reg++] = reinterpret_cast<intptr_t>(ptr);
-                t.int_regs[int_reg++] = size;
-            }
-            break;
-
-        case TypeKind::DynArray:
-            if (int_reg < 6) {
-                t.int_regs[int_reg++] = reinterpret_cast<intptr_t>(as<DynamicArray>(params, offset).ptr);
-                t.int_regs[int_reg++] = as<DynamicArray>(params, offset).size;
-                t.int_regs[int_reg++] = as<DynamicArray>(params, offset).capacity;
-            }
-            break;
-
-        case TypeKind::Array:
-            if (int_reg < 8) {
-                t.int_regs[int_reg++] = reinterpret_cast<intptr_t>(as<StaticArray>(params, offset).ptr);
-                t.int_regs[int_reg++] = as<StaticArray>(params, offset).size;
-            }
-            break;
-
-        default:
-            NYI("more value types");
-            // if (type_kind(et) == TK_AGGREGATE) {
-            //     size_t size_in_double_words = alignat(typeid_sizeof(et->type_id), 8) / 8;
-            //     if (size_in_double_words <= (8 - int_reg)) {
-            //         uint64_t buffer[size_in_double_words];
-            //         size_t   sz = datum_binary_image(v, buffer);
-            //         assert(sz <= size_in_double_words * 8);
-            //         for (size_t ix2 = 0; ix2 < size_in_double_words; ++ix2) {
-            //             t.int_regs[int_reg] = buffer[ix2];
-            //             ++int_reg;
-            //         }
-            //         continue;
-            //     }
-            // }
-        }
-        offset += alignat(type->size_of(), 8);
+                    auto fld_offset = 0;
+                    for (auto comp : strukt.layout) {
+                        fld_offset = alignat(fld_offset, align_of(comp));
+                        allocate_value(comp, mem, fld_offset);
+                        align = std::max(align, align_of(comp));
+                        fld_offset += size_of(comp);
+                    }
+                } },
+            type);
     }
 
     trace("Trampoline:");
@@ -525,50 +492,21 @@ bool native_call_x86_64(std::string_view name, void *params, std::vector<pType> 
     if (auto const trampoline_result = trampoline(&t); trampoline_result) {
         fatal("Error executing `{}`. Trampoline returned {}", name, trampoline_result);
     }
-    trace("  Integer result: {}", t.int_return_value);
+    trace("  Integer result: {}", t.int_return_value[0]);
 
-    switch (return_type->kind()) {
-    case TypeKind::IntType: {
-#undef S
-#define S(W)                                                             \
-    if (return_type == TypeRegistry::i##W) {                             \
-        set(return_value, static_cast<int##W##_t>(t.int_return_value));  \
-        return true;                                                     \
-    }                                                                    \
-    if (return_type == TypeRegistry::u##W) {                             \
-        set(return_value, static_cast<uint##W##_t>(t.int_return_value)); \
-        return true;                                                     \
-    }
-        BitWidths(S)
-#undef S
-            UNREACHABLE();
-    } break;
-    case TypeKind::FloatType: {
-        if (return_type == TypeRegistry::f32) {
-            set(return_value, static_cast<float>(t.double_return_value));
-            return true;
+    auto sz = size_of(return_type);
+    if (sz > 0 && sz <= 16) {
+        memcpy(return_value, t.int_return_value, std::min(sz, 8));
+        if (sz > 8) {
+            memcpy(return_value, t.int_return_value + 1, std::min(sz - 8, 8));
         }
-        if (return_type == TypeRegistry::f64) {
-            set(return_value, t.double_return_value);
-            return true;
-        }
-        UNREACHABLE();
-    } break;
-    case TypeKind::BoolType:
-        set(return_value, static_cast<bool>(t.int_return_value));
-        return true;
-    case TypeKind::PointerType:
-    case TypeKind::ReferenceType:
-        set(return_value, reinterpret_cast<void *>(static_cast<intptr_t>(t.int_return_value)));
-        return true;
-    case TypeKind::VoidType:
-        return true;
-    default:
-        UNREACHABLE();
+    } else if (sz > 16) {
+        fatal("Cannot return big structures yet");
     }
+    return true;
 }
 
-extern bool native_call(std::string_view name, void *params, std::vector<pType> const &types, void *return_value, pType const &return_type)
+bool native_call(std::string_view name, void *params, std::vector<ILType> const &types, void *return_value, ILType const &return_type)
 {
     return NATIVE_CALL(name, params, types, return_value, return_type);
 }

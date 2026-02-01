@@ -35,7 +35,7 @@ struct Atom {
                 Slice,
         DynamicArray,
         StaticArray,
-        void *>
+        void const *>
         payload;
 
     explicit Atom(std::integral auto val)
@@ -75,7 +75,6 @@ struct Atom {
     }
 
     Atom &operator=(Atom const &) = default;
-    bool  operator==(Atom const &) const = default;
 
     [[nodiscard]] pType               type() const;
     [[nodiscard]] std::optional<Atom> coerce(pType const &to_type) const;
@@ -163,7 +162,8 @@ struct Value {
     Value(float val);
     Value(double val);
     Value(bool val);
-    Value(void *val);
+    Value(Slice val);
+    Value(void const *val);
     Value(Atom atom);
     Value(std::nullptr_t);
 

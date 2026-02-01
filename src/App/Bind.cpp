@@ -538,7 +538,7 @@ BindResult bind(ASTNode n, Comptime &impl)
                 return parser.bind_error(n->location, res.error());
             } else {
                 auto const output_val = exec_res.value();
-                auto const output_slice = as<Slice>(output_val);
+                auto const output_slice = as<Slice>(as_value<Slice>(vm, output_val));
                 impl.output = std::wstring { static_cast<wchar_t *>(output_slice.ptr), static_cast<size_t>(output_slice.size) };
                 trace("@comptime block executed");
                 trace(L"@comptime output: {}", impl.output);

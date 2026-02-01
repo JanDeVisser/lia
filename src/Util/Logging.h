@@ -230,3 +230,57 @@ void assert_msg(std::string_view const &file, size_t line, std::string_view cons
 #define NYI(fmt, ...) Util::fatal_msg(__FILE__, __LINE__, __func__, "Not Yet Implemented: " fmt __VA_OPT__(, ) __VA_ARGS__)
 
 }
+
+inline std::wostream &operator<<(std::wostream &os, std::monostate const &)
+{
+    os << L"void";
+    return os;
+}
+
+inline std::ostream &operator<<(std::ostream &os, std::monostate const &)
+{
+    os << "void";
+    return os;
+}
+
+template<>
+struct std::formatter<std::monostate, wchar_t> {
+
+    template<class ParseContext>
+    constexpr ParseContext::iterator parse(ParseContext &ctx)
+    {
+        auto it = ctx.begin();
+        if (it == ctx.end() || *it == '}') {
+            return it;
+        }
+        ++it;
+        return it;
+    }
+
+    template<class FmtContext>
+    FmtContext::iterator format(std::monostate const &, FmtContext &ctx) const
+    {
+        return std::ranges::copy(L"(void)", ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<std::monostate, char> {
+
+    template<class ParseContext>
+    constexpr ParseContext::iterator parse(ParseContext &ctx)
+    {
+        auto it = ctx.begin();
+        if (it == ctx.end() || *it == '}') {
+            return it;
+        }
+        ++it;
+        return it;
+    }
+
+    template<class FmtContext>
+    FmtContext::iterator format(std::monostate const &, FmtContext &ctx) const
+    {
+        return std::ranges::copy("(void)", ctx.out()).out;
+    }
+};

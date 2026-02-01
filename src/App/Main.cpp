@@ -148,7 +148,8 @@ struct Builder {
         if (auto res = execute_qbe(vm); !res.has_value()) {
             fatal(L"Evaluation failed: {}", res.error());
         } else {
-            auto ret = res.value().coerce(TypeRegistry::i32).value_or(Value { TypeRegistry::i32, -1 });
+            auto ret_value = infer_value(vm, res.value());
+            auto ret = ret_value.coerce(TypeRegistry::i32).value_or(Value { TypeRegistry::i32, -1 });
             return as<int32_t>(ret);
         }
     }

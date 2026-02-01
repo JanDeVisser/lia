@@ -6,7 +6,9 @@
 
 #pragma once
 
+#include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <ostream>
 #include <string>
 #include <variant>
@@ -20,20 +22,14 @@
 namespace Lia::QBE {
 
 using namespace Util;
+namespace fs = std::filesystem;
 
-enum class LocalType {
-    Unknown,
-    Value,
-    Reference,
-};
-
-struct Local {
-    LocalType type = LocalType::Unknown;
-    int       var;
-
-    static Local value(int var);
-    static Local ref(int var);
-};
+#define QBE_ASSERT(expr, ctx)                                            \
+    do {                                                                 \
+        if (!(expr)) {                                                   \
+            fatal("{}:{} Assertion failed: " #expr, __FILE__, __LINE__); \
+        }                                                                \
+    } while (0)
 
 #define ILBASETYPES(S)     \
     S(V, 0x00, void, 0, 0) \
@@ -57,16 +53,114 @@ enum class ILBaseType {
 #undef S
 };
 
-using ILType = std::variant<ILBaseType, std::wstring>;
+struct ILStructType {
+    std::wstring            name;
+    std::vector<ILBaseType> layout;
+
+    bool operator==(ILStructType const &) const = default;
+    bool operator!=(ILStructType const &) const = default;
+};
+
+using ILType = std::variant<std::monostate, ILBaseType, ILStructType>;
+
+bool operator==(ILType const &type, ILBaseType other);
+bool operator!=(ILType const &type, ILBaseType other);
+bool operator==(ILBaseType const &type, ILType const &other);
+bool operator!=(ILBaseType const &type, ILType const &other);
 
 std::wostream &operator<<(std::wostream &os, ILBaseType const &type);
+std::wostream &operator<<(std::wostream &os, ILStructType const &type);
 std::wostream &operator<<(std::wostream &os, ILType const &type);
 
 ILBaseType basetype(ILType const &type);
 ILBaseType must_extend(ILType const &type);
 ILBaseType targettype(ILType const &type);
+int        align_of(ILBaseType const &type);
+int        size_of(ILBaseType const &type);
 int        align_of(ILType const &type);
 int        size_of(ILType const &type);
+bool       qbe_first_class_type(pType const &type);
+ILBaseType qbe_type_code(pType const &type);
+ILBaseType qbe_load_code(pType const &type);
+ILType     qbe_type(pType const &type);
+
+template<typename T>
+ILBaseType il_type_for()
+{
+    fatal("Specialize il_type_for<{}>()", typeid(T).name());
+}
+
+template<>
+inline ILBaseType il_type_for<bool>()
+{
+    return ILBaseType::W;
+}
+
+template<>
+inline ILBaseType il_type_for<int8_t>()
+{
+    return ILBaseType::B;
+}
+
+template<>
+inline ILBaseType il_type_for<uint8_t>()
+{
+    return ILBaseType::UB;
+}
+
+template<>
+inline ILBaseType il_type_for<int16_t>()
+{
+    return ILBaseType::H;
+}
+
+template<>
+inline ILBaseType il_type_for<uint16_t>()
+{
+    return ILBaseType::UH;
+}
+
+template<>
+inline ILBaseType il_type_for<int32_t>()
+{
+    return ILBaseType::W;
+}
+
+template<>
+inline ILBaseType il_type_for<uint32_t>()
+{
+    return ILBaseType::UW;
+}
+
+template<>
+inline ILBaseType il_type_for<int64_t>()
+{
+    return ILBaseType::L;
+}
+
+template<>
+inline ILBaseType il_type_for<uint64_t>()
+{
+    return ILBaseType::L;
+}
+
+template<>
+inline ILBaseType il_type_for<void *>()
+{
+    return ILBaseType::L;
+}
+
+template<>
+inline ILBaseType il_type_for<float>()
+{
+    return ILBaseType::S;
+}
+
+template<>
+inline ILBaseType il_type_for<double>()
+{
+    return ILBaseType::D;
+}
 
 enum class ILInstructionType {
     Alloc,
@@ -117,12 +211,35 @@ enum class ILOperation {
 };
 
 struct ILValue {
+    struct Local {
+        int var;
+    };
+
+    struct Pointer {
+        int    ptr;
+        ILType references { ILBaseType::V };
+    };
+
     struct Variable {
-        std::wstring name;
+        int depth;
+        int index;
+
+        std::wstring name() const
+        {
+            return std::format(L"var_{}.{}", depth, index);
+        }
     };
 
     struct Parameter {
-        std::wstring name;
+        int index;
+
+        std::wstring name() const
+        {
+            return std::format(L"param_{}", index);
+        }
+    };
+
+    struct ReturnValue {
     };
 
     struct Global {
@@ -135,10 +252,12 @@ struct ILValue {
 
     using ILValueInner = std::variant<
         Local,
+        Pointer,
         Global,
         Literal,
         Variable,
         Parameter,
+        ReturnValue,
         int64_t,
         double,
         std::vector<ILValue>>;
@@ -147,19 +266,18 @@ struct ILValue {
     static ILValue local(int var, TypeDesc td)
     {
         ILType t { std::move(td) };
-        return { t, Local::value(var), align_of(t), size_of(t) };
+        return { t, Local { var } };
     }
 
-    static ILValue local_ref(int var)
+    static ILValue pointer(int ptr)
     {
-        ILType t { ILBaseType::L };
-        return { t, Local::ref(var), align_of(t), size_of(t) };
+        return { ILType { ILBaseType::L }, Pointer { ptr } };
     }
 
     template<typename TypeDesc>
     static ILValue global(std::wstring name, TypeDesc td)
     {
-        return { ILType { std::move(td) }, Global { std::move(name) }, 8, 8 };
+        return { ILType { std::move(td) }, Global { std::move(name) } };
     }
 
     template<typename TypeDesc>
@@ -169,15 +287,15 @@ struct ILValue {
     }
 
     template<typename TypeDesc>
-    static ILValue variable(std::wstring name, TypeDesc td)
+    static ILValue variable(int depth, int index, TypeDesc td)
     {
-        return { ILType { std::move(td) }, Variable { std::move(name) }, 8, 8 };
+        return { ILType { std::move(td) }, Variable { depth, index } };
     }
 
     template<typename TypeDesc>
-    static ILValue parameter(std::wstring name, TypeDesc td)
+    static ILValue parameter(int index, TypeDesc td)
     {
-        return { ILType { std::move(td) }, Parameter { std::move(name) } };
+        return { ILType { std::move(td) }, Parameter { index } };
     }
 
     static ILValue string(int str_id)
@@ -194,36 +312,58 @@ struct ILValue {
     static ILValue float_val(double d, TypeDesc td)
     {
         ILType t { std::move(td) };
-        return { t, d, align_of(t), size_of(t) };
+        return { t, d };
     }
 
     template<typename TypeDesc>
     static ILValue integer(int64_t i, TypeDesc td)
     {
         ILType t { std::move(td) };
-        return { t, i, align_of(t), size_of(t) };
+        return { t, i };
     }
 
     static ILValue sequence(std::vector<ILValue> values, int align, int size)
     {
-        return { ILType { ILBaseType::V }, std::move(values), align, size };
+        return { ILType { ILBaseType::V }, std::move(values) };
+    }
+
+    template<typename TypeDesc>
+    static ILValue return_value(TypeDesc td)
+    {
+        return { ILType { std::move(td) }, ReturnValue {} };
     }
 
     static ILValue null()
     {
-        return { ILBaseType::V, 0 };
+        return { std::monostate {}, 0 };
     }
 
     ILType       type;
     ILValueInner inner;
-    int          align;
-    int          size;
 };
 
 using ILValues = std::vector<ILValue>;
 
 std::wostream &operator<<(std::wostream &os, ILValue const &value);
 std::wostream &operator<<(std::wostream &os, ILOperation const &op);
+
+struct QBEOperand {
+    ILValue value;
+    ASTNode node;
+};
+
+struct QBEBinExpr {
+    QBEOperand lhs;
+    Operator   op;
+    QBEOperand rhs;
+};
+
+struct QBEUnaryExpr {
+    Operator   op;
+    QBEOperand operand;
+};
+
+using GenResult = std::expected<ILValue, std::wstring>;
 
 struct AllocDef {
     size_t  alignment;
@@ -234,9 +374,9 @@ struct AllocDef {
 };
 
 struct BlitDef {
-    ILValue src;
-    ILValue dest;
-    size_t  bytes;
+    ILValue  src;
+    ILValue  dest;
+    intptr_t bytes;
 
     friend std::wostream &operator<<(std::wostream &os, BlitDef const &impl);
 };
@@ -381,21 +521,35 @@ template<class N>
 concept ir_node = std::is_same_v<N, ILFile>
     || std::is_same_v<N, ILFunction>;
 
-struct ILParameter {
+struct ILBinding {
     std::wstring name;
-    ILType       type;
+    pType        type;
+    int          depth;
+    int          index;
+    ILType       il_type;
 };
+
+using ILBindings = std::vector<ILBinding>;
+using ILBindingStack = std::vector<ILBindings>;
 
 struct ILFunction {
     size_t                     file_id;
     std::wstring               name;
-    ILType                     return_type;
+    pType                      return_type;
     bool                       exported { false };
+    intptr_t                   ret_allocation { 0 };
     size_t                     id;
-    std::vector<ILParameter>   parameters;
+    ILBindings                 parameters {};
+    ILBindingStack             variables {};
     std::vector<ILInstruction> instructions;
     std::vector<size_t>        labels;
-    friend std::wostream      &operator<<(std::wostream &os, ILFunction const &function);
+
+    std::optional<ILBinding> find(std::wstring_view name);
+    ILBinding const         &add(std::wstring_view name, pType const &type);
+    ILBinding const         &add_parameter(std::wstring_view name, pType const &type);
+    void                     push();
+    void                     pop();
+    friend std::wostream    &operator<<(std::wostream &os, ILFunction const &function);
 };
 
 struct ILFile {
@@ -415,22 +569,124 @@ struct ILProgram {
     std::vector<ILFile> files;
 };
 
-using ILVariables = std::map<std::wstring, Value>;
+struct QBEValue {
+    struct Ptr {
+        enum class PtrType {
+            Stack = 0,
+            Data,
+            Heap,
+        } type { PtrType::Stack };
+        size_t ptr;
+    };
+
+    ILType type { std::monostate {} };
+    std::variant<
+        std::monostate,
+        bool,
+#undef S
+#define S(W) int##W##_t, uint##W##_t,
+        BitWidths(S)
+#undef S
+#define S(W, T) T,
+            FloatBitWidths(S)
+#undef S
+                Ptr>
+        payload;
+
+    QBEValue() = default;
+    QBEValue(QBEValue const &) = default;
+
+    QBEValue(ILType const &type, auto val)
+        : type(type)
+        , payload(val)
+    {
+        trace(L"Created typed value {}", *this);
+    }
+
+    QBEValue(auto val)
+        : type(il_type_for<decltype(val)>())
+        , payload(val)
+    {
+        trace(L"Created auto value {}", *this);
+    }
+};
+
+template<>
+inline ILBaseType il_type_for<QBEValue::Ptr>()
+{
+    return ILBaseType::L;
+}
+
+template<typename T>
+T as(QBEValue const &val)
+{
+    if (std::holds_alternative<T>(val.payload)) {
+        return std::get<T>(val.payload);
+    }
+    fatal(L"Value `{}` does not hold type `{}`", val, typeid(T).name());
+}
+
+template<>
+inline bool as(QBEValue const &val)
+{
+    return std::visit(
+        overloads {
+            [](bool const &b) -> bool {
+                return b;
+            },
+            [](std::integral auto const &i) -> bool {
+                return i != 0;
+            },
+            [&val](auto const &) -> bool {
+                fatal(L"Value `{}` cannot be converted to bool", val);
+            } },
+        val.payload);
+}
+
+QBEValue evaluate(QBEValue const &lhs, Operator op, QBEValue const &rhs);
+QBEValue evaluate(Operator op, QBEValue const &operand);
+
+using ILVariables = std::map<std::wstring, QBEValue>;
+
+struct QBEContext {
+    int       next_label;
+    int       next_var;
+    fs::path  file_name;
+    bool      is_export { false };
+    ILProgram program {};
+    size_t    current_file;
+    size_t    current_function;
+
+    ILValue                  add_string(std::wstring_view s);
+    ILValue                  add_cstring(std::string_view s);
+    ILType                   qbe_type(pType const &type);
+    void                     add_operation(ILInstructionImpl impl);
+    std::optional<ILBinding> find(std::wstring_view name);
+    ILBinding const         &add(std::wstring_view name, pType const &type);
+    ILBinding const         &add_parameter(std::wstring_view name, pType const &type);
+    void                     push();
+    void                     pop();
+    ILFunction              &function();
+};
 
 struct Frame {
-    struct VM         &vm;
-    ILFile const      &file;
-    ILFunction const  &function;
-    ILVariables        variables {};
-    ILVariables        arguments {};
-    std::vector<Value> locals {};
-    size_t             ip { 0 };
+    struct VM            &vm;
+    ILFile const         &file;
+    ILFunction const     &function;
+    ILVariables           variables {};
+    ILVariables           arguments {};
+    QBEValue              return_value;
+    std::vector<QBEValue> locals {};
+    std::vector<QBEValue> pointers {};
+    size_t                ip { 0 };
 
-    intptr_t allocate(size_t bytes, size_t alignment);
-    intptr_t allocate(pType const &type);
-    void     release(intptr_t ptr);
-    uint8_t *ptr(intptr_t p);
-    uint8_t *ptr(Value const &v);
+    QBEValue::Ptr allocate(size_t bytes, size_t alignment);
+    QBEValue::Ptr allocate(ILType const &type);
+    void          release(QBEValue::Ptr ptr);
+    uint8_t      *ptr(QBEValue const &v);
+    uint8_t      *ptr(QBEValue::Ptr ptr);
+    QBEValue      make_from_buffer(ILType type, QBEValue::Ptr ptr);
+    QBEValue      make_from_buffer(ILType type, QBEValue val);
 };
 
 using pFrame = Ptr<Frame, struct VM>;
@@ -441,27 +697,204 @@ struct VM {
     std::vector<Frame>              frames;
     std::vector<ILVariables>        globals;
     std::array<uint8_t, STACK_SIZE> stack;
+    std::array<uint8_t, STACK_SIZE> data;
     size_t                          stack_pointer { 0 };
+    size_t                          data_pointer { 0 };
 
     VM(ILProgram const &program);
-    size_t       size() const;
-    bool         empty() const;
-    pFrame       new_frame(ILFile const &file, ILFunction const &function);
-    void         release_frame();
-    Frame const &operator[](size_t ix) const;
-    Frame       &operator[](size_t ix);
-    intptr_t     allocate(size_t bytes, size_t alignment);
-    intptr_t     allocate(pType const &type);
-    void         release(intptr_t ptr);
+    size_t        size() const;
+    bool          empty() const;
+    pFrame        new_frame(ILFile const &file, ILFunction const &function);
+    void          release_frame();
+    Frame const  &operator[](size_t ix) const;
+    Frame        &operator[](size_t ix);
+    QBEValue::Ptr allocate(size_t bytes, size_t alignment);
+    QBEValue::Ptr allocate(ILType const &type);
+    void          release(QBEValue::Ptr ptr);
+    void         *ptr(QBEValue::Ptr ptr);
+    void const   *ptr(QBEValue::Ptr ptr) const;
+    void          dump_stack() const;
 };
 
-using ExecutionResult = std::expected<Value, std::wstring>;
+using ExecutionResult = std::expected<QBEValue, std::wstring>;
 
+ILValue                                dereference(QBEOperand const &operand, QBEContext &ctx);
+GenResult                              qbe_operator(QBEBinExpr const &expr, QBEContext &ctx);
+GenResult                              qbe_operator(QBEUnaryExpr const &expr, QBEContext &ctx);
 std::expected<ILProgram, std::wstring> generate_qbe(ASTNode const &node);
 std::expected<void, std::wstring>      compile_qbe(ILProgram const &program);
-ExecutionResult                        execute_qbe(VM &vm, ILFile const &file, ILFunction const &function, std::vector<Value> const &args);
+ExecutionResult                        execute_qbe(VM &vm, ILFile const &file, ILFunction const &function, std::vector<QBEValue> const &args);
 ExecutionResult                        execute_qbe(VM &vm);
+bool                                   native_call(std::string_view name, void *params, std::vector<ILType> const &types, void *return_value, ILType const &return_type);
+Value                                  infer_value(VM const &vm, QBEValue const &val);
 std::wostream                         &operator<<(std::wostream &os, ILFunction const &function);
 std::wostream                         &operator<<(std::wostream &os, ILFile const &file);
+std::wostream                         &operator<<(std::wostream &os, QBEValue const &value);
+std::wostream                         &operator<<(std::wostream &os, QBEValue::Ptr const &ptr);
+
+template<typename T>
+Value as_value(VM const &vm, QBEValue const &val)
+{
+    std::unreachable();
+}
+
+template<>
+inline Value as_value<Slice>(VM const &vm, QBEValue const &val)
+{
+    assert(std::holds_alternative<QBEValue::Ptr>(val.payload));
+    void const *ptr = vm.ptr(std::get<QBEValue::Ptr>(val.payload));
+    return make_value(*((Slice *) ptr));
+}
 
 }
+
+template<>
+struct std::formatter<Lia::QBE::ILBaseType, wchar_t> {
+
+    template<class ParseContext>
+    constexpr ParseContext::iterator parse(ParseContext &ctx)
+    {
+        auto it = ctx.begin();
+        if (it == ctx.end() || *it == '}') {
+            return it;
+        }
+        ++it;
+        return it;
+    }
+
+    template<class FmtContext>
+    FmtContext::iterator format(Lia::QBE::ILBaseType const &type, FmtContext &ctx) const
+    {
+        std::wostringstream out;
+        out << type;
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<Lia::QBE::ILStructType, wchar_t> {
+
+    template<class ParseContext>
+    constexpr ParseContext::iterator parse(ParseContext &ctx)
+    {
+        auto it = ctx.begin();
+        if (it == ctx.end() || *it == '}') {
+            return it;
+        }
+        ++it;
+        return it;
+    }
+
+    template<class FmtContext>
+    FmtContext::iterator format(Lia::QBE::ILStructType const &type, FmtContext &ctx) const
+    {
+        std::wostringstream out;
+        out << type;
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<Lia::QBE::ILType, wchar_t> {
+
+    template<class ParseContext>
+    constexpr ParseContext::iterator parse(ParseContext &ctx)
+    {
+        auto it = ctx.begin();
+        if (it == ctx.end() || *it == '}') {
+            return it;
+        }
+        ++it;
+        return it;
+    }
+
+    template<class FmtContext>
+    FmtContext::iterator format(Lia::QBE::ILType const &type, FmtContext &ctx) const
+    {
+        std::wostringstream out;
+        std::visit(
+            overloads {
+                [&out](std::monostate const &) {
+                    out << L"(void)";
+                },
+                [&out](auto const &inner) {
+                    out << inner;
+                } },
+            type);
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<Lia::QBE::ILValue, wchar_t> {
+    using ILValue = Lia::QBE::ILValue;
+
+    template<class ParseContext>
+    constexpr ParseContext::iterator parse(ParseContext &ctx)
+    {
+        auto it = ctx.begin();
+        if (it == ctx.end() || *it == '}') {
+            return it;
+        }
+        ++it;
+        return it;
+    }
+
+    template<class FmtContext>
+    FmtContext::iterator format(ILValue const &value, FmtContext &ctx) const
+    {
+        std::wostringstream out;
+        out << value;
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<Lia::QBE::QBEValue, wchar_t> {
+    using QBEValue = Lia::QBE::QBEValue;
+    using Ptr = QBEValue::Ptr;
+
+    template<class ParseContext>
+    constexpr ParseContext::iterator parse(ParseContext &ctx)
+    {
+        auto it = ctx.begin();
+        if (it == ctx.end() || *it == '}') {
+            return it;
+        }
+        ++it;
+        return it;
+    }
+
+    template<class FmtContext>
+    FmtContext::iterator format(QBEValue const &value, FmtContext &ctx) const
+    {
+        std::wostringstream out;
+        out << value;
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<Lia::QBE::QBEValue::Ptr, wchar_t> {
+    using QBEValue = Lia::QBE::QBEValue;
+    using Ptr = QBEValue::Ptr;
+
+    template<class ParseContext>
+    constexpr ParseContext::iterator parse(ParseContext &ctx)
+    {
+        auto it = ctx.begin();
+        if (it == ctx.end() || *it == '}') {
+            return it;
+        }
+        ++it;
+        return it;
+    }
+
+    template<class FmtContext>
+    FmtContext::iterator format(Ptr const &ptr, FmtContext &ctx) const
+    {
+        std::wostringstream out;
+        out << ptr;
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};

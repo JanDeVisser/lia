@@ -4,7 +4,10 @@
   "comptime_stderr": [],
   "stdout": [
     "12 by reference",
-    "42 by value"
+    "42 by reference again",
+    "42 by value",
+    "12 by value again",
+    "42 finally"
   ],
   "stderr": [],
   "exit": 0,

@@ -368,7 +368,6 @@ Atom evaluate_Modulo(Atom const &lhs, Atom const &rhs)
     return std::visit(
         overloads {
             [](std::integral auto lhs_value, std::integral auto rhs_value) -> Atom {
-                info("{} Mod {} = {} {}", lhs_value, rhs_value, lhs_value % rhs_value, typeid(decltype(lhs_value % rhs_value)).name());
                 return Atom { lhs_value % rhs_value };
             },
             [](std::integral auto lhs_value, std::floating_point auto rhs_value) -> Atom {
@@ -649,7 +648,12 @@ Value::Value(bool const val)
 {
 }
 
-Value::Value(void *val)
+Value::Value(Slice const val)
+    : Value(TypeRegistry::string, val)
+{
+}
+
+Value::Value(void const *val)
     : Value(TypeRegistry::pointer, val)
 {
 }
@@ -673,7 +677,7 @@ std::optional<Value> Value::coerce(pType const &to_type) const
         return Value { TypeRegistry::cstring, Atom { string_to_cstring(as<Slice>(*this)) } };
     }
     if (type == TypeRegistry::cstring && to_type == TypeRegistry::string) {
-        return Value { TypeRegistry::string, Atom { cstring_to_string(static_cast<char const *>(as<void *>(*this))) } };
+        return Value { TypeRegistry::string, Atom { cstring_to_string(static_cast<char const *>(as<void const *>(*this))) } };
     }
     if (is<DynArray>(type) && is<SliceType>(to_type) && std::get<DynArray>(type->description).array_of == std::get<SliceType>(type->description).slice_of) {
         auto const dyn_arr = as<DynamicArray>(*this);
@@ -939,8 +943,20 @@ Value evaluate(Value const &lhs, Operator op, Value const &rhs)
                 return true;
             };
             int64_t len = 0;
-            for (auto ptr = (char *) as<void *>(lhs); !is_zero(ptr, lhs.type->size_of()); ++len) {
-                ptr += lhs.type->size_of();
+            auto    ptr = (char const *) as<void const *>(lhs);
+            auto    sz = lhs.type->size_of();
+            while (true) {
+                auto is_null { true };
+                for (auto ix = 0; ix < lhs.type->size_of(); ++ix) {
+                    if (*(ptr + sz * len + ix) != 0) {
+                        is_null = false;
+                        break;
+                    }
+                }
+                if (is_null) {
+                    break;
+                }
+                ++len;
             }
             return len;
         }
@@ -955,7 +971,6 @@ Value evaluate(Value const &lhs, Operator op, Value const &rhs)
     }
     auto ret = evaluate_on_atoms(lhs, op, rhs);
     s << ' ' << ret.to_string();
-    info(L"{}", s.str());
     return ret;
 }
 

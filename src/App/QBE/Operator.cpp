@@ -142,6 +142,11 @@ QBEValue evaluate_Cast(QBEValue const &lhs, QBEValue const &rhs)
     fatal("Cannot cast a value");
 }
 
+QBEValue evaluate_Deref(QBEValue const &lhs, QBEValue const &rhs)
+{
+    fatal("Cannot dereference a value");
+}
+
 QBEValue evaluate_Length(QBEValue const &, QBEValue const &)
 {
     fatal("Cannot take length of an QBEValue");

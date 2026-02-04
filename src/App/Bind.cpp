@@ -492,7 +492,7 @@ BindResult bind(ASTNode n, Call &impl)
 template<>
 BindResult bind(ASTNode n, Comptime &impl)
 {
-    Parser &parser = *(n.repo);
+    auto &parser = *(n.repo);
     if (n->bound_type == nullptr) {
         switch (parser.bind(impl.statements)) {
         case ASTStatus::InternalError:
@@ -516,9 +516,6 @@ BindResult bind(ASTNode n, Comptime &impl)
             break;
         }
         trace("Bound compile time script");
-        if (trace_on()) {
-            dump(impl.statements, std::wcerr);
-        }
     }
 
     if (impl.output.empty()) {
@@ -779,7 +776,28 @@ BindResult bind(ASTNode n, PublicDeclaration &impl)
 template<>
 BindResult bind(ASTNode n, Return &impl)
 {
-    return bind(impl.expression);
+    try_bind(impl.expression);
+    auto &parser { *(n.repo) };
+    auto  func = parser.current_function();
+    assert(func != nullptr && is<FunctionDefinition>(func));
+    auto func_signature = get<FunctionDefinition>(func).declaration->bound_type;
+    assert(is<FunctionType>(func_signature));
+    auto return_type = get<FunctionType>(func_signature).result;
+    if (impl.expression != nullptr && !impl.expression->bound_type->assignable_to(return_type)) {
+        return n.bind_error(
+            L"`return` expression is a `{}` and is not assignable to a `{}`",
+            (impl.expression)->bound_type->name, return_type->name);
+    }
+    if (impl.expression == nullptr && return_type != TypeRegistry::void_) {
+        return n.bind_error(
+            L"`return` requires an expression of type `{}`",
+            return_type->name);
+    }
+    if (impl.expression != nullptr && return_type == TypeRegistry::void_) {
+        return n.bind_error(
+            L"`return` returns from a function returning `void` and therefore cannot return a value");
+    }
+    return return_type;
 }
 
 template<>
@@ -842,6 +860,21 @@ BindResult bind(ASTNode n, UnaryExpression &impl)
                         switch (pseudo_type) {
                         case PseudoType::Self:
                             return operand_type;
+                        case PseudoType::Boolean:
+                            return TypeRegistry::boolean;
+                        case PseudoType::Long:
+                            return TypeRegistry::i64;
+                        case PseudoType::Refer:
+                            return std::visit(
+                                overloads {
+                                    [](OptionalType const &opt) -> pType {
+                                        return TypeRegistry::the().referencing(opt.type);
+                                    },
+                                    [](auto const &) -> pType {
+                                        UNREACHABLE();
+                                        return TypeRegistry::void_;
+                                    } },
+                                operand_type->description);
                         default:
                             UNREACHABLE();
                         }

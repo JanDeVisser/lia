@@ -43,6 +43,7 @@ std::vector<Parser::OperatorDef> Parser::operators {
     { Operator::Call, '(', 15 },
     { Operator::Call, ')', 15, Position::Closing },
     { Operator::Cast, LiaKeyword::Cast, 14 },
+    { Operator::Deref, '*', 14, Position::Prefix, Associativity::Left },
     { Operator::Divide, '/', 12 },
     { Operator::Equals, LiaKeyword::Equals, 8 },
     { Operator::Greater, '>', 8 },
@@ -1369,6 +1370,12 @@ pType Parser::find_type(std::wstring const &name) const
 {
     assert(!namespaces.empty() && namespaces.back()->ns);
     return namespaces.back()->ns->find_type(name);
+}
+
+ASTNode Parser::current_function() const
+{
+    assert(!namespaces.empty() && namespaces.back()->ns);
+    return namespaces.back()->ns->current_function();
 }
 
 void Parser::register_type(std::wstring name, pType type)

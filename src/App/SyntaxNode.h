@@ -163,6 +163,7 @@ struct Namespace {
     ASTNode  parent_of() const;
     bool     is_registered(std::wstring const &name) const;
     pType    find_type(std::wstring const &name) const;
+    ASTNode  current_function() const;
     bool     has_type(std::wstring const &name) const;
     void     register_type(std::wstring name, pType type);
     void     register_function(std::wstring name, ASTNode fnc);

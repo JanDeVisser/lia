@@ -1,0 +1,12 @@
+{
+  "name": "18_return_opt",
+  "comptime_stdout": [],
+  "comptime_stderr": [],
+  "stdout": [
+    "420",
+    "null"
+  ],
+  "stderr": [],
+  "exit": 0,
+  "args": []
+}

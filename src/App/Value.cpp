@@ -287,6 +287,11 @@ Atom evaluate_Cast(Atom const &lhs, Atom const &rhs)
     fatal("Cannot cast a value");
 }
 
+Atom evaluate_Deref(Atom const &lhs, Atom const &rhs)
+{
+    fatal("Cannot deref a value");
+}
+
 Atom evaluate_Length(Atom const &, Atom const &)
 {
     fatal("Cannot take length of an Atom");

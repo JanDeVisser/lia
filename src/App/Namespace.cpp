@@ -52,6 +52,18 @@ pType Namespace::find_type(std::wstring const &name) const
     return nullptr;
 }
 
+ASTNode Namespace::current_function() const
+{
+    if (parent_of() == nullptr) {
+        return nullptr;
+    }
+    auto p = parent_of();
+    if (is<FunctionDefinition>(p)) {
+        return p;
+    }
+    return p->ns->current_function();
+}
+
 void Namespace::register_type(std::wstring name, pType type)
 {
     assert(!types.contains(name));

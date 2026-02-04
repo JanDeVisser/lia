@@ -15,5 +15,6 @@
   "14_struct",
   "15_braced_initializer",
   "16_optional",
-  "17_return_struct"
+  "17_return_struct",
+  "18_return_opt"
 ]

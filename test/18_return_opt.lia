@@ -1,0 +1,26 @@
+struct X {
+    foo: i64,
+    bar: i64,
+}
+
+func ret_opt(ok: bool) ?X {
+    if (!ok) {
+        return null
+    }
+    x: X = { 69, 420 }
+    return x
+}
+
+public func main() i32 {
+    x := ret_opt(true)
+    if (x) {
+        putint((*x).bar)
+        endln()
+    }
+    x = ret_opt(false)
+    if (!x) {
+        putln("null")
+    }
+    return 0::i32
+}
+

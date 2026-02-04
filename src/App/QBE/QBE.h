@@ -318,8 +318,9 @@ struct ILValue {
     template<typename TypeDesc>
     static ILValue integer(int64_t i, TypeDesc td)
     {
-        ILType t { std::move(td) };
-        return { t, i };
+        ILType  t { std::move(td) };
+        ILValue ret { t, i };
+        return ret;
     }
 
     static ILValue sequence(std::vector<ILValue> values, int align, int size)
@@ -443,6 +444,13 @@ struct LoadDef {
     friend std::wostream &operator<<(std::wostream &os, LoadDef const &impl);
 };
 
+struct NegateDef {
+    ILValue operand;
+    ILValue target;
+
+    friend std::wostream &operator<<(std::wostream &os, NegateDef const &impl);
+};
+
 struct PhiDef {
     struct PhiArgDef {
         int     come_from;
@@ -497,6 +505,7 @@ using ILInstructionImpl = std::variant<
     JnzDef,
     LabelDef,
     LoadDef,
+    NegateDef,
     PhiDef,
     RetDef,
     StoreDef,

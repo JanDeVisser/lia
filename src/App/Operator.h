@@ -33,6 +33,7 @@ enum class Associativity {
     S(BinaryXor)     \
     S(Call)          \
     S(Cast)          \
+    S(Deref)         \
     S(Divide)        \
     S(Equals)        \
     S(Greater)       \
@@ -83,6 +84,9 @@ enum class PseudoType {
     Self,
     Lhs,
     Rhs,
+    Refer,
+    Boolean,
+    Long,
 };
 
 struct Operand {

@@ -123,11 +123,24 @@ ASTNode normalize(ASTNode n, Comptime const &impl)
         }
         return n;
     }
-    script = normalize(script);
+
+    auto synthetic_return_type = parser.make_node<TypeSpecification>(
+        n->location,
+        TypeNameNode { L"string", ASTNodes {} });
+    auto synthetic_decl = parser.make_node<FunctionDeclaration>(
+        n->location,
+        std::format(L"comptime-{}", *(n.id)),
+        ASTNodes {},
+        ASTNodes {},
+        synthetic_return_type);
+    auto synthetic_def = parser.make_node<FunctionDefinition>(
+        std::format(L"comptime-{}", *(n.id)),
+        synthetic_decl,
+        script);
+    normalize(synthetic_def);
+
+    script = normalize(synthetic_def);
     trace("@comptime block parsed");
-    if (trace_on()) {
-        dump(get<Block>(script).statements, std::wcerr);
-    }
     return make_node<Comptime>(n, impl.script_text, script);
 }
 

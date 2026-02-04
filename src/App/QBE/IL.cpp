@@ -668,6 +668,17 @@ std::wostream &operator<<(std::wostream &os, LoadDef const &impl)
     return os;
 }
 
+std::wostream &operator<<(std::wostream &os, NegateDef const &impl)
+{
+    os << "    "
+       << impl.target
+       << " = "
+       << targettype(impl.target.type)
+       << " neg "
+       << impl.operand;
+    return os;
+}
+
 std::wostream &operator<<(std::wostream &os, PhiDef::PhiArgDef const &impl)
 {
     os << "@lbl_" << impl.come_from << " " << impl.expr;

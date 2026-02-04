@@ -46,15 +46,17 @@ std::vector<BinaryOperator> binary_ops {
 
 std::vector<UnaryOperator> unary_ops = {
     { Operator::BinaryInvert, TypeKind::IntType, PseudoType::Self },
+    { Operator::Deref, TypeKind::OptionalType, PseudoType::Refer },
     { Operator::Idempotent, TypeKind::IntType, PseudoType::Self },
     { Operator::Idempotent, TypeKind::FloatType, PseudoType::Self },
     { Operator::Negate, TypeKind::IntType, PseudoType::Self },
     { Operator::Negate, TypeKind::FloatType, PseudoType::Self },
     { Operator::LogicalInvert, TypeKind::BoolType, PseudoType::Self },
-    { Operator::Length, TypeKind::SliceType, TypeRegistry::i64 },
-    { Operator::Length, TypeKind::Array, TypeRegistry::i64 },
-    { Operator::Length, TypeKind::DynArray, TypeRegistry::i64 },
-    { Operator::Length, TypeKind::ZeroTerminatedArray, TypeRegistry::i64 },
+    { Operator::LogicalInvert, TypeKind::OptionalType, PseudoType::Boolean },
+    { Operator::Length, TypeKind::SliceType, PseudoType::Long },
+    { Operator::Length, TypeKind::Array, PseudoType::Long },
+    { Operator::Length, TypeKind::DynArray, PseudoType::Long },
+    { Operator::Length, TypeKind::ZeroTerminatedArray, PseudoType::Long },
 };
 
 std::map<Operator, Operator> assign_ops = {

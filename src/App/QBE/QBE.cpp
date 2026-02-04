@@ -246,6 +246,11 @@ void raw_assign(ILValue const &lhs, ILValue const &rhs, T const &descr, QBEConte
 }
 
 template<>
+void raw_assign(ILValue const &lhs, ILValue const &rhs, std::monostate const &, QBEContext &ctx)
+{
+}
+
+template<>
 void raw_assign(ILValue const &lhs, ILValue const &rhs, StructType const &strukt, QBEContext &ctx)
 {
     std::visit(
@@ -293,6 +298,17 @@ void raw_assign(ILValue const &lhs, ILValue const &rhs, OptionalType const &opti
         });
 }
 
+template<>
+void raw_assign(ILValue const &lhs, ILValue const &rhs, SliceType const &slice, QBEContext &ctx)
+{
+    ctx.add_operation(
+        BlitDef {
+            rhs,
+            lhs,
+            static_cast<intptr_t>(slice.size_of()),
+        });
+}
+
 static void raw_assign(ILValue const &lhs, ILValue const &rhs, pType const &type, QBEContext &ctx)
 {
     std::visit(
@@ -302,12 +318,12 @@ static void raw_assign(ILValue const &lhs, ILValue const &rhs, pType const &type
         type->description);
 }
 
-GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, size_t size, QBEContext &ctx)
+GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, QBEContext &ctx)
 {
     auto rhs_value { TRY_GENERATE(rhs, ctx) };
     std::visit(
         overloads {
-            [&ctx, &lhs, &rhs_value, &size](OptionalType const &lhs_opt, OptionalType const &rhs_opt) {
+            [&ctx, &lhs, &rhs_value](OptionalType const &lhs_opt, OptionalType const &rhs_opt) {
                 assert(lhs_opt.type == rhs_opt.type);
                 raw_assign(lhs.value, rhs_value.value, lhs.node->bound_type, ctx);
             },
@@ -326,7 +342,7 @@ GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, size_t size, QBECont
                         flag_ptr,
                     });
             },
-            [&ctx, &lhs, &rhs_value, &size](OptionalType const &optional, auto const &) {
+            [&ctx, &lhs, &rhs_value](OptionalType const &optional, auto const &) {
                 raw_assign(lhs.value, rhs_value.value, optional.type, ctx);
                 auto flag_ptr = ILValue::pointer(++ctx.next_var);
                 ctx.add_operation(
@@ -342,7 +358,7 @@ GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, size_t size, QBECont
                         flag_ptr,
                     });
             },
-            [&ctx, &lhs, &rhs_value, &size](auto const &, auto const &) {
+            [&ctx, &lhs, &rhs_value](auto const &, auto const &) {
                 raw_assign(lhs.value, rhs_value.value, lhs.node->bound_type, ctx);
             } },
         lhs.node->bound_type->description, rhs->bound_type->description);
@@ -392,7 +408,7 @@ GenResult generate_qbe_node(ASTNode const &n, BinaryExpression const &impl, QBEC
     auto        rhs_value_type { rhs_type->value_type() };
 
     if (impl.op == Operator::Assign) {
-        return assign(TRY_GENERATE(impl.lhs, ctx), impl.rhs, impl.lhs->bound_type->size_of(), ctx);
+        return assign(TRY_GENERATE(impl.lhs, ctx), impl.rhs, ctx);
     }
     QBEOperand lhs_operand { TRY_GENERATE(impl.lhs, ctx) };
     QBEOperand rhs_operand = { ILValue::null(), impl.rhs };
@@ -655,6 +671,15 @@ GenResult generate_qbe_node(ASTNode const &n, ExpressionList const &impl, QBECon
 template<>
 GenResult generate_qbe_node(ASTNode const &n, FunctionDefinition const &impl, QBEContext &ctx)
 {
+    if (ctx.program.name.empty()) {
+        ctx.program.name = std::format(L"anonymous-{}", n.id.value_or(0));
+    }
+    if (ctx.program.files.empty()) {
+        auto &file = ctx.program.files.emplace_back(ctx.program.name);
+        file.id = ctx.program.files.size() - 1;
+        ctx.current_file = file.id;
+        ctx.current_function = 0;
+    }
     if (!is<ExternLink>(impl.implementation)) {
         if (auto res = generate_qbe_node(impl.declaration, ctx); !res) {
             return res;
@@ -844,18 +869,15 @@ GenResult generate_qbe_node(ASTNode const &n, Return const &impl, QBEContext &ct
 {
     RetDef ret {};
     if (impl.expression != nullptr) {
-        auto  r = TRY_GENERATE(impl.expression, ctx).value;
         auto &file = ctx.program.files[ctx.current_file];
         auto &function = file.functions[ctx.current_function];
         if (function.ret_allocation > 0) {
-            ctx.add_operation(BlitDef {
-                r,
-                ILValue::return_value(ILBaseType::L),
-                function.ret_allocation,
-            });
+            if (auto res = assign({ ILValue::return_value(ILBaseType::L), n }, impl.expression, ctx); !res.has_value()) {
+                return res;
+            };
             ret.expr = ILValue::return_value(ILBaseType::L);
         } else {
-            ret.expr = r;
+            ret.expr = TRY_GENERATE(impl.expression, ctx).value;
         }
     }
     ctx.add_operation(ret);
@@ -881,7 +903,7 @@ GenResult generate_qbe_node(ASTNode const &n, VariableDeclaration const &impl, Q
             var_ref,
         });
     if (impl.initializer != nullptr) {
-        return assign({ var_ref, n }, impl.initializer, size, ctx);
+        return assign({ var_ref, n }, impl.initializer, ctx);
     }
     return var_ref;
 }

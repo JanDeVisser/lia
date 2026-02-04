@@ -349,6 +349,53 @@ GenResult qbe_operator(QBEUnaryExpr const &expr, FloatType const &float_type, QB
     }
 }
 
+template<>
+GenResult qbe_operator(QBEUnaryExpr const &expr, OptionalType const &optional, QBEContext &ctx)
+{
+    auto operand = dereference(expr.operand, ctx);
+    auto var = ILValue::local(++ctx.next_var, operand.type);
+    switch (expr.op) {
+    case Operator::Deref:
+        return operand;
+    case Operator::LogicalInvert: {
+        auto flag_ptr = ILValue::pointer(++ctx.next_var);
+        ctx.add_operation(
+            ExprDef {
+                operand,
+                ILValue::integer(optional.type->size_of(), ILBaseType::L),
+                ILOperation::Add,
+                flag_ptr,
+            });
+        auto flag_value = ILValue::local(++ctx.next_var, ILBaseType::W);
+        ctx.add_operation(
+            LoadDef {
+                flag_ptr,
+                flag_value,
+            });
+        auto intermediate = ILValue::local(++ctx.next_var, ILBaseType::W);
+        ctx.add_operation(
+            ExprDef {
+                flag_value,
+                ILValue::integer(1, ILBaseType::W),
+                ILOperation::Xor,
+                intermediate,
+            });
+        auto ret_value = ILValue::local(++ctx.next_var, ILBaseType::W);
+        ctx.add_operation(
+            ExprDef {
+                intermediate,
+                ILValue::integer(1, ILBaseType::W),
+                ILOperation::And,
+                ret_value,
+            });
+        return ret_value;
+    } break;
+    default:
+        NYI("QBE mapping for optional operator `{}`", Operator_name(expr.op));
+        break;
+    }
+}
+
 GenResult qbe_operator(QBEUnaryExpr const &expr, QBEContext &ctx)
 {
     auto const &value_type = expr.operand.node->bound_type->value_type();

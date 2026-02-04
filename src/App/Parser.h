@@ -156,6 +156,7 @@ struct Parser {
     void                               register_function(std::wstring name, ASTNode node);
     void                               unregister_function(std::wstring name, ASTNode node);
     [[nodiscard]] pType                find_type(std::wstring const &name) const;
+    ASTNode                            current_function() const;
     void                               register_type(std::wstring name, pType type);
     void                               clear_namespaces();
     void                               push_namespace(ASTNode const &ns);

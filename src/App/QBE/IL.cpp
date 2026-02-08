@@ -483,9 +483,6 @@ std::wostream &operator<<(std::wostream &os, ILValue const &value)
             [&os](ILValue::Local const &local) {
                 os << "%local_" << local.var;
             },
-            [&os](ILValue::Pointer const &p) {
-                os << "%ptr_" << p.ptr;
-            },
             [&os](ILValue::Global const &global) {
                 os << '$' << global.name;
             },

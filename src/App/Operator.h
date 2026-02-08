@@ -33,7 +33,6 @@ enum class Associativity {
     S(BinaryXor)     \
     S(Call)          \
     S(Cast)          \
-    S(Deref)         \
     S(Divide)        \
     S(Equals)        \
     S(Greater)       \
@@ -56,7 +55,8 @@ enum class Associativity {
     S(ShiftRight)    \
     S(Sizeof)        \
     S(Subscript)     \
-    S(Subtract)
+    S(Subtract)      \
+    S(Unwrap)
 
 #define AssignmentOps(S) \
     S(Assign)            \

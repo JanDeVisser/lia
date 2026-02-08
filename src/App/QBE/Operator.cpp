@@ -31,20 +31,11 @@ BinOps(S)
 {
     return std::visit(
         overloads {
-            [](std::monostate const &) -> bool {
-                return true;
-            },
-            [](std::integral auto const &value) -> bool {
+            [](intptr_t const &value) -> bool {
                 return value == 0;
             },
-            [](std::floating_point auto const &value) -> bool {
+            [](double const &value) -> bool {
                 return value == 0.0;
-            },
-            [](bool const &value) -> bool {
-                return !value;
-            },
-            [](QBEValue::Ptr const &value) -> bool {
-                return value.ptr == 0;
             } },
         value.payload);
 }
@@ -142,11 +133,6 @@ QBEValue evaluate_Cast(QBEValue const &lhs, QBEValue const &rhs)
     fatal("Cannot cast a value");
 }
 
-QBEValue evaluate_Deref(QBEValue const &lhs, QBEValue const &rhs)
-{
-    fatal("Cannot dereference a value");
-}
-
 QBEValue evaluate_Length(QBEValue const &, QBEValue const &)
 {
     fatal("Cannot take length of an QBEValue");
@@ -190,9 +176,6 @@ QBEValue evaluate_Add(QBEValue const &lhs, QBEValue const &rhs)
             },
             [](void *lhs_value, std::integral auto rhs_value) -> QBEValue {
                 return QBEValue { static_cast<void *>(static_cast<uint8_t *>(lhs_value) + static_cast<intptr_t>(rhs_value)) };
-            },
-            [](QBEValue::Ptr lhs_value, std::integral auto rhs_value) -> QBEValue {
-                return QBEValue { QBEValue::Ptr { lhs_value.type, lhs_value.ptr + rhs_value } };
             },
             [](auto lhs_value, auto rhs_value) -> QBEValue {
                 fatal("Operator only applicable to numbers, not to `{}` and `{}`",
@@ -352,6 +335,11 @@ QBEValue evaluate_LogicalInvert(QBEValue const &lhs, QBEValue const &rhs)
 QBEValue evaluate_Sizeof(QBEValue const &lhs, QBEValue const &)
 {
     return QBEValue { size_of(lhs.type) };
+}
+
+QBEValue evaluate_Unwrap(QBEValue const &lhs, QBEValue const &rhs)
+{
+    fatal("Cannot unwrap a value");
 }
 
 QBEValue evaluate(QBEValue const &lhs, Operator op, QBEValue const &rhs)

@@ -15,6 +15,7 @@ public func main() i32 {
     x := must ret_opt(true)
     putint(x.bar)
     endln();
+    x = must ret_opt(false)
     return 0::i32
 }
 

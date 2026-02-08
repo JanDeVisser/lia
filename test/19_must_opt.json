@@ -1,0 +1,13 @@
+{
+  "name": "19_must_opt",
+  "comptime_stdout": [],
+  "comptime_stderr": [],
+  "stdout": [
+    "420"
+  ],
+  "stderr": [
+    "Empty optional value"
+  ],
+  "exit": -6,
+  "args": []
+}

@@ -287,11 +287,6 @@ Atom evaluate_Cast(Atom const &lhs, Atom const &rhs)
     fatal("Cannot cast a value");
 }
 
-Atom evaluate_Deref(Atom const &lhs, Atom const &rhs)
-{
-    fatal("Cannot deref a value");
-}
-
 Atom evaluate_Length(Atom const &, Atom const &)
 {
     fatal("Cannot take length of an Atom");
@@ -494,6 +489,11 @@ Atom evaluate_LogicalInvert(Atom const &lhs, Atom const &rhs)
 Atom evaluate_Sizeof(Atom const &lhs, Atom const &)
 {
     return Atom { lhs.type()->size_of() };
+}
+
+Atom evaluate_Unwrap(Atom const &lhs, Atom const &rhs)
+{
+    fatal("Cannot unwrap a value");
 }
 
 Atom evaluate(Atom const &lhs, Operator op, Atom const &rhs)

@@ -14,7 +14,7 @@ func ret_opt(ok: bool) ?X {
 public func main() i32 {
     x := ret_opt(true)
     if (x) {
-        putint((*x).bar)
+        putint((must x).bar)
         endln()
     }
     x = ret_opt(false)

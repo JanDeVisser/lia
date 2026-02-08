@@ -181,9 +181,6 @@ ILValue dereference(QBEOperand const &operand, QBEContext &ctx)
     return std::visit(
         overloads {
             [&ctx, &value, &operand, &type](ILValue::Local local) -> ILValue {
-                return value;
-            },
-            [&ctx, &value, &operand, &type](ILValue::Pointer pointer) -> ILValue {
                 if (is<ReferenceType>(operand.node->bound_type) && qbe_first_class_type(type)) {
                     auto ret = ILValue::local(++ctx.next_var, ctx.qbe_type(type));
                     ctx.add_operation(
@@ -198,6 +195,15 @@ ILValue dereference(QBEOperand const &operand, QBEContext &ctx)
             [&value, &ctx, &operand, &type](ILValue::Variable variable) -> ILValue {
                 if (!is<ReferenceType>(operand.node->bound_type) && qbe_first_class_type(type)) {
                     auto ret = ILValue::local(++ctx.next_var, ctx.qbe_type(type));
+                    ctx.add_operation(
+                        LoadDef {
+                            .pointer = value,
+                            .target = ret,
+                        });
+                    return ret;
+                }
+                if (is<ReferenceType>(operand.node->bound_type)) {
+                    auto ret = ILValue::pointer(++ctx.next_var);
                     ctx.add_operation(
                         LoadDef {
                             .pointer = value,

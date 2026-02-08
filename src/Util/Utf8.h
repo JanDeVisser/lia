@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cxxabi.h>
 #include <expected>
 #include <string>
 
@@ -127,6 +128,20 @@ inline std::wstring as_wstring(char const *s)
 inline std::wstring as_wstring(wchar_t const *s)
 {
     return as_wstring(std::wstring_view { s });
+}
+
+template<typename T>
+std::wstring demangle()
+{
+    int          status;
+    auto const  *type_name = typeid(T).name();
+    auto         realname = abi::__cxa_demangle(type_name, 0, 0, &status);
+    std::wstring ret { as_wstring(type_name) };
+    if (!status) {
+        ret = as_wstring(realname);
+    }
+    free(realname);
+    return ret;
 }
 
 }

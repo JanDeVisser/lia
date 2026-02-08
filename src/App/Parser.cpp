@@ -43,7 +43,6 @@ std::vector<Parser::OperatorDef> Parser::operators {
     { Operator::Call, '(', 15 },
     { Operator::Call, ')', 15, Position::Closing },
     { Operator::Cast, LiaKeyword::Cast, 14 },
-    { Operator::Deref, '*', 14, Position::Prefix, Associativity::Left },
     { Operator::Divide, '/', 12 },
     { Operator::Equals, LiaKeyword::Equals, 8 },
     { Operator::Greater, '>', 8 },
@@ -66,6 +65,7 @@ std::vector<Parser::OperatorDef> Parser::operators {
     { Operator::Subscript, '[', 15, Position::Postfix },
     { Operator::Subscript, ']', 15, Position::Closing },
     { Operator::Subtract, '-', 11 },
+    { Operator::Unwrap, LiaKeyword::Must, 14, Position::Prefix, Associativity::Right },
 };
 
 struct BindingPower {

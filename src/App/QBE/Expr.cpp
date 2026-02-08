@@ -71,6 +71,7 @@ GenResult qbe_operator(QBEBinExpr const &expr, BoolType const &lhs, BoolType con
 }
 
 static constexpr wchar_t const *division_by_zero { L"Division by zero" };
+static constexpr wchar_t const *empty_optional { L"Empty optional value" };
 
 static void check_division_by_zero(ILValue const &rhs, QBEContext &ctx)
 {
@@ -98,6 +99,58 @@ static void check_division_by_zero(ILValue const &rhs, QBEContext &ctx)
     };
     call_def.args.push_back(div_by_zero_id);
     call_def.args.push_back(ILValue::integer(wcslen(division_by_zero), ILBaseType::L));
+    ctx.add_operation(call_def);
+    ctx.add_operation(LabelDef { carry_on });
+}
+
+static void check_optional(ILValue const &val, OptionalType const &optional, QBEContext &ctx)
+{
+    auto zero { ILValue::local(++ctx.next_var, ILBaseType::W) };
+    auto flag_ptr { ILValue::pointer(++ctx.next_var) };
+    auto flag_val { ILValue::local(++ctx.next_var, ILBaseType::W) };
+    auto flag_val_2 { ILValue::local(++ctx.next_var, ILBaseType::W) };
+    int  carry_on = ++ctx.next_label;
+    int  abort_mission = ++ctx.next_label;
+    ctx.add_operation(
+        ExprDef {
+            val,
+            ILValue::integer(optional.type->size_of(), ILBaseType::L),
+            ILOperation::Add,
+            flag_ptr,
+        });
+    ctx.add_operation(
+        LoadDef {
+            flag_ptr,
+            flag_val,
+        });
+    ctx.add_operation(
+        ExprDef {
+            ILValue::integer(0x00000001, ILBaseType::W),
+            flag_val,
+            ILOperation::And,
+            flag_val_2,
+        });
+    ctx.add_operation(
+        ExprDef {
+            ILValue::integer(0, ILBaseType::W),
+            flag_val_2,
+            ILOperation::Equals,
+            zero,
+        });
+    ctx.add_operation(
+        JnzDef {
+            zero,
+            abort_mission,
+            carry_on,
+        });
+    ctx.add_operation(LabelDef { abort_mission });
+    ILValue empty_optional_id = ctx.add_string(empty_optional);
+    CallDef call_def = {
+        L"libliart:lia$abort",
+        ILValue::null(),
+    };
+    call_def.args.push_back(empty_optional_id);
+    call_def.args.push_back(ILValue::integer(wcslen(empty_optional), ILBaseType::L));
     ctx.add_operation(call_def);
     ctx.add_operation(LabelDef { carry_on });
 }
@@ -227,10 +280,11 @@ GenResult qbe_operator(QBEBinExpr const &expr, StructType const &lhs, auto const
 {
     if (expr.op == Operator::MemberAccess) {
         auto id = get<Identifier>(expr.rhs.node);
+        auto deref = dereference(expr.lhs, ctx);
         auto ret = ILValue::pointer(++ctx.next_var);
         ctx.add_operation(
             ExprDef {
-                expr.lhs.value,
+                deref,
                 ILValue::integer(lhs.offset_of(id.identifier), ILBaseType::L),
                 ILOperation::Add,
                 ret,
@@ -355,8 +409,16 @@ GenResult qbe_operator(QBEUnaryExpr const &expr, OptionalType const &optional, Q
     auto operand = dereference(expr.operand, ctx);
     auto var = ILValue::local(++ctx.next_var, operand.type);
     switch (expr.op) {
-    case Operator::Deref:
-        return operand;
+    case Operator::Unwrap: {
+        check_optional(operand, optional, ctx);
+        auto ret = ILValue::pointer(++ctx.next_var);
+        ctx.add_operation(
+            CopyDef {
+                operand,
+                ret,
+            });
+        return ret;
+    } break;
     case Operator::LogicalInvert: {
         auto flag_ptr = ILValue::pointer(++ctx.next_var);
         ctx.add_operation(
@@ -406,8 +468,8 @@ GenResult qbe_operator(QBEUnaryExpr const &expr, QBEContext &ctx)
         return std::visit(
             overloads {
                 [&expr](ILValue::Local const &local) -> ILValue {
-                    UNREACHABLE();
-                    return ILValue::null();
+                    assert(expr.operand.value.type == ILBaseType::L);
+                    return expr.operand.value;
                 },
                 [&expr](ILValue::Global const &) -> ILValue {
                     return expr.operand.value;
@@ -416,9 +478,6 @@ GenResult qbe_operator(QBEUnaryExpr const &expr, QBEContext &ctx)
                     return expr.operand.value;
                 },
                 [&expr](ILValue::Parameter const &parameter) -> ILValue {
-                    return expr.operand.value;
-                },
-                [&expr](ILValue::Pointer const &parameter) -> ILValue {
                     return expr.operand.value;
                 },
                 [](auto const &) -> ILValue {

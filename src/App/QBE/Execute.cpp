@@ -17,24 +17,6 @@ namespace Lia::QBE {
 using namespace Util;
 using namespace Lia;
 
-std::wostream &operator<<(std::wostream &os, QBEValue::Ptr const &ptr)
-{
-    os << '[';
-    switch (ptr.type) {
-    case QBEValue::Ptr::PtrType::Stack:
-        os << 'S';
-        break;
-    case QBEValue::Ptr::PtrType::Data:
-        os << 'D';
-        break;
-    case QBEValue::Ptr::PtrType::Heap:
-        os << 'H';
-        break;
-    }
-    os << "] " << ptr.ptr;
-    return os;
-}
-
 std::wostream &operator<<(std::wostream &os, QBEValue const &value)
 {
     std::visit(
@@ -50,9 +32,10 @@ std::wostream &operator<<(std::wostream &os, QBEValue const &value)
     return os;
 }
 
-QBEValue Frame::make_from_buffer(ILType type, QBEValue::Ptr ptr)
+QBEValue Frame::make_from_buffer(ILValue target, QBEValue val)
 {
-    void const *buffer = vm.ptr(ptr);
+    assert(val.type == ILBaseType::L);
+    void const *buffer = static_cast<void const *>(val);
     return std::visit(
         overloads {
             [](std::monostate const &) -> QBEValue {
@@ -64,80 +47,41 @@ QBEValue Frame::make_from_buffer(ILType type, QBEValue::Ptr ptr)
                     return QBEValue {};
                 case ILBaseType::B:
                 case ILBaseType::SB:
-                    return QBEValue { bt, *((int8_t *) buffer) };
+                    return QBEValue { *((int8_t *) buffer) };
                 case ILBaseType::UB:
-                    return QBEValue { bt, *((uint8_t *) buffer) };
+                    return QBEValue { *((uint8_t *) buffer) };
                 case ILBaseType::H:
                 case ILBaseType::SH:
-                    return QBEValue { bt, *((int16_t *) buffer) };
+                    return QBEValue { *((int16_t *) buffer) };
                 case ILBaseType::UH:
-                    return QBEValue { bt, *((uint16_t *) buffer) };
+                    return QBEValue { *((uint16_t *) buffer) };
                 case ILBaseType::W:
                 case ILBaseType::SW:
-                    return QBEValue { bt, *((int32_t *) buffer) };
+                    return QBEValue { *((int32_t *) buffer) };
                 case ILBaseType::UW:
-                    return QBEValue { bt, *((uint32_t *) buffer) };
+                    return QBEValue { *((uint32_t *) buffer) };
                 case ILBaseType::L:
-                    return QBEValue { bt, *((int64_t *) buffer) };
+                    return QBEValue { *((int64_t *) buffer) };
                 case ILBaseType::S:
-                    return QBEValue { bt, *((float *) buffer) };
+                    return QBEValue { *((float *) buffer) };
                 case ILBaseType::D:
-                    return QBEValue { bt, *((double *) buffer) };
+                    return QBEValue { *((double *) buffer) };
                 }
                 return QBEValue {};
             },
-            [this, &ptr, &type](ILStructType const &strukt) -> QBEValue {
-                return QBEValue {
-                    type,
-                    ptr,
-                };
+            [this, &val, &target](ILStructType const &strukt) -> QBEValue {
+                return val;
             } },
-        type);
-}
-
-QBEValue Frame::make_from_buffer(ILType type, QBEValue val)
-{
-    if (std::holds_alternative<QBEValue::Ptr>(val.payload)) {
-        return make_from_buffer(type, std::get<QBEValue::Ptr>(val.payload));
-    }
-    fatal("Attempt to dereference non-pointer value");
+        target.type);
 }
 
 Value infer_value(VM const &vm, QBEValue const &val)
 {
     return std::visit(
-        overloads {
-            [&vm, &val](ILBaseType const &bt) -> Value {
-                return std::visit(
-                    overloads {
-                        [](std::monostate const &) -> Value {
-                            return Value {};
-                        },
-                        [](std::integral auto const &i) -> Value {
-                            return Value { i };
-                        },
-                        [](std::floating_point auto const &flt) -> Value {
-                            return Value { flt };
-                        },
-                        [&vm](QBEValue::Ptr const &ptr) -> Value {
-                            return Value { vm.ptr(ptr) };
-                        },
-                    },
-                    val.payload);
-            },
-            [&vm, &val](ILStructType const &strukt) -> Value {
-                assert(std::holds_alternative<QBEValue::Ptr>(val.payload));
-                void const *ptr = vm.ptr(std::get<QBEValue::Ptr>(val.payload));
-                if (strukt.name == L"slice_t") {
-                    return make_value(*((Slice *) ptr));
-                } else {
-                    return Value { ptr };
-                }
-            },
-            [](std::monostate const &) -> Value {
-                return Value {};
-            } },
-        val.type);
+        [](auto const &v) -> Value {
+            return Value { v };
+        },
+        val.payload);
 }
 
 bool is_pointer(ILValue const &value)
@@ -156,102 +100,57 @@ bool is_pointer(ILValue const &value)
         value.type);
 }
 
-QBEValue::Ptr Frame::allocate(size_t bytes, size_t alignment)
+QBEValue Frame::allocate(size_t bytes, size_t alignment)
 {
     return vm.allocate(bytes, alignment);
 }
 
-QBEValue::Ptr Frame::allocate(ILType const &type)
+QBEValue Frame::allocate(ILType const &type)
 {
     return vm.allocate(type);
 }
 
-void Frame::release(QBEValue::Ptr ptr)
+void Frame::release(QBEValue ptr)
 {
     vm.release(ptr);
 }
 
-uint8_t *Frame::ptr(QBEValue::Ptr ptr)
-{
-    return static_cast<uint8_t *>(vm.ptr(ptr));
-}
-
-uint8_t *Frame::ptr(QBEValue const &v)
-{
-    return std::visit(
-        overloads {
-            [this](QBEValue::Ptr const &p) -> uint8_t * {
-                return ptr(p);
-            },
-            [](intptr_t const &p) -> uint8_t * {
-                return reinterpret_cast<uint8_t *>(p);
-            },
-            [](auto const &) -> uint8_t * {
-                fatal("Attempt to dereference non-pointer value");
-            } },
-        v.payload);
-}
-
-QBEValue::Ptr VM::allocate(size_t bytes, size_t alignment)
+QBEValue VM::allocate(size_t bytes, size_t alignment)
 {
     if (bytes == 0) {
-        return QBEValue::Ptr { QBEValue::Ptr::PtrType::Stack, stack_pointer };
+        return QBEValue { stack.data() + stack_pointer };
     }
-    intptr_t ptr { alignat(stack_pointer, alignment) };
-    if (ptr + bytes > STACK_SIZE) {
+    if (stack_pointer + bytes > STACK_SIZE) {
         fatal("Stack overflow");
     }
-    stack_pointer = ptr + bytes;
+    auto     ptr_base = alignat(stack_pointer, alignment);
+    intptr_t ptr { reinterpret_cast<intptr_t>(&stack[ptr_base]) };
+    stack_pointer = ptr_base + bytes;
     trace("Allocated {} bytes aligned at {}. New stack pointer {}", bytes, alignment, stack_pointer);
-    return QBEValue::Ptr { QBEValue::Ptr::PtrType::Stack, static_cast<size_t>(ptr) };
+    return QBEValue { ptr };
 }
 
-QBEValue::Ptr VM::allocate(ILType const &type)
+QBEValue VM::allocate(ILType const &type)
 {
     if (size_of(type) == 0) {
-        return QBEValue::Ptr { QBEValue::Ptr::PtrType::Stack, stack_pointer };
+        return QBEValue { stack.data() + stack_pointer };
     }
     trace(L"Allocating size {}, align {}", size_of(type), align_of(type));
     return allocate(size_of(type), align_of(type));
 }
 
-void VM::release(QBEValue::Ptr ptr)
+void VM::release(QBEValue ptr)
 {
-    if (ptr.type != QBEValue::Ptr::PtrType::Stack) {
+    auto const *p = static_cast<uint8_t const *>(ptr);
+    if (p < stack.data() || p > stack.data() + STACK_SIZE) {
         fatal("Can only release stack memory");
     }
-    if (ptr.ptr > stack_pointer) {
+    if (p > stack.data() + stack_pointer) {
         fatal("Releasing unallocated stack space");
     }
-    auto bytes = stack_pointer - ptr.ptr;
-    stack_pointer = ptr.ptr;
+    auto bytes = (stack.data() + stack_pointer) - p;
+    stack_pointer = p - stack.data();
     trace("Released {} bytes. New stack pointer {}", bytes, stack_pointer);
-}
-
-void *VM::ptr(QBEValue::Ptr ptr)
-{
-    switch (ptr.type) {
-    case QBEValue::Ptr::PtrType::Stack:
-        return stack.data() + ptr.ptr;
-    case QBEValue::Ptr::PtrType::Data:
-        return data.data() + ptr.ptr;
-    case QBEValue::Ptr::PtrType::Heap:
-        NYI("Heap access in QBE execution is not yet implemented");
-    }
-    UNREACHABLE();
-}
-
-void const *VM::ptr(QBEValue::Ptr ptr) const
-{
-    switch (ptr.type) {
-    case QBEValue::Ptr::PtrType::Stack:
-        return stack.data() + ptr.ptr;
-    case QBEValue::Ptr::PtrType::Data:
-        return data.data() + ptr.ptr;
-    case QBEValue::Ptr::PtrType::Heap:
-        NYI("Heap access in QBE execution is not yet implemented");
-    }
-    UNREACHABLE();
 }
 
 void assign(pFrame const &frame, ILValue const &val_ref, QBEValue const &v)
@@ -266,12 +165,6 @@ void assign(pFrame const &frame, ILValue const &val_ref, QBEValue const &v)
                     frame->locals.resize(local.var + 1);
                 }
                 frame->locals[local.var] = v;
-            },
-            [frame, &v](ILValue::Pointer const &ptr) {
-                if (frame->pointers.size() < ptr.ptr + 1) {
-                    frame->pointers.resize(ptr.ptr + 1);
-                }
-                frame->pointers[ptr.ptr] = v;
             },
             [frame, &v](ILValue::Variable const &variable) {
                 frame->variables[variable.name()] = v;
@@ -297,12 +190,6 @@ QBEValue get(pFrame const &frame, ILValue const &val_ref)
                     fatal("No local value with id `{}`in frame", local.var);
                 }
                 return frame->locals[local.var];
-            },
-            [&frame](ILValue::Pointer const &ptr) -> QBEValue {
-                if (frame->pointers.size() < ptr.ptr + 1) {
-                    fatal("No pointer value with id `{}`in frame", ptr.ptr);
-                }
-                return frame->pointers[ptr.ptr];
             },
             [&frame](ILValue::Variable const &variable) -> QBEValue {
                 if (frame->variables.contains(variable.name())) {
@@ -333,11 +220,11 @@ QBEValue get(pFrame const &frame, ILValue const &val_ref)
                 return frame->return_value;
             },
             [](int64_t const &int_val) -> QBEValue {
-                QBEValue v { ILBaseType::L, int_val };
+                QBEValue v { int_val };
                 return v;
             },
             [](double const &dbl_val) -> QBEValue {
-                return { ILBaseType::D, dbl_val };
+                return { dbl_val };
             },
             [](auto const &inner) -> QBEValue {
                 fatal("Value get({})", typeid(decltype(inner)).name());
@@ -346,67 +233,115 @@ QBEValue get(pFrame const &frame, ILValue const &val_ref)
     return ret;
 }
 
-void store(pFrame const &frame, ILType type, QBEValue::Ptr target, ILValue const &src_ref)
+void store(pFrame const &frame, QBEValue target, ILValue const &src_ref)
 {
-    if (size_of(type) == 0) {
+    assert(target.type == ILBaseType::L);
+    if (size_of(src_ref.type) == 0) {
         return;
     }
     QBEValue src = get(frame, src_ref);
-    using voidptr = void const *;
-    intptr_t p { 0 };
+    auto    *ptr = static_cast<uint8_t *>(target);
+
+    auto store_value = [](QBEValue const &val, uint8_t *target_ptr) {
+        uint8_t  p8;
+        uint16_t p16;
+        uint32_t p32;
+        int64_t  p64;
+        uint8_t *src_ptr;
+        float    f32;
+        double   f64;
+
+        switch (val.type) {
+        case ILBaseType::B:
+        case ILBaseType::SB:
+        case ILBaseType::UB:
+            p8 = static_cast<uint8_t>(val);
+            src_ptr = &p8;
+            break;
+        case ILBaseType::H:
+        case ILBaseType::SH:
+        case ILBaseType::UH:
+            p16 = static_cast<uint16_t>(val);
+            src_ptr = reinterpret_cast<uint8_t *>(&p16);
+            break;
+        case ILBaseType::W:
+        case ILBaseType::SW:
+        case ILBaseType::UW:
+            p32 = static_cast<uint32_t>(val);
+            src_ptr = reinterpret_cast<uint8_t *>(&p32);
+            break;
+        case ILBaseType::L:
+            p64 = static_cast<int64_t>(val);
+            src_ptr = reinterpret_cast<uint8_t *>(&p64);
+            break;
+        case ILBaseType::S:
+            f32 = static_cast<float>(val);
+            src_ptr = reinterpret_cast<uint8_t *>(&f32);
+            break;
+        case ILBaseType::D:
+            f64 = static_cast<double>(val);
+            src_ptr = reinterpret_cast<uint8_t *>(&f64);
+            break;
+        default:
+            break;
+        }
+        memset(target_ptr, 0, size_of(val.type));
+        memcpy(target_ptr, src_ptr, size_of(val.type));
+    };
+
+    auto dereference_value = [](uint8_t const *ptr, ILBaseType type) -> QBEValue {
+        QBEValue ret;
+        ret.type = type;
+        switch (type) {
+        case ILBaseType::B:
+        case ILBaseType::SB:
+            ret.payload = static_cast<intptr_t>(*(reinterpret_cast<int8_t const *>(ptr)));
+            break;
+        case ILBaseType::UB:
+            ret.payload = static_cast<intptr_t>(*ptr);
+            break;
+        case ILBaseType::H:
+        case ILBaseType::SH:
+            ret.payload = static_cast<intptr_t>(*(reinterpret_cast<int16_t const *>(ptr)));
+            break;
+        case ILBaseType::UH:
+            ret.payload = static_cast<intptr_t>(*(reinterpret_cast<uint16_t const *>(ptr)));
+            break;
+        case ILBaseType::W:
+        case ILBaseType::SW:
+            ret.payload = static_cast<intptr_t>(*(reinterpret_cast<int32_t const *>(ptr)));
+            break;
+        case ILBaseType::UW:
+            ret.payload = static_cast<intptr_t>(*(reinterpret_cast<uint32_t const *>(ptr)));
+            break;
+        case ILBaseType::L:
+            ret.payload = static_cast<intptr_t>(*(reinterpret_cast<int64_t const *>(ptr)));
+            break;
+        case ILBaseType::S:
+            ret.payload = static_cast<double>(*(reinterpret_cast<float const *>(ptr)));
+            break;
+        case ILBaseType::D:
+            ret.payload = *(reinterpret_cast<double const *>(ptr));
+            break;
+        default:
+            break;
+        }
+        return ret;
+    };
+
     std::visit(
         overloads {
             [](std::monostate const &) {
             },
-            [&frame, &p](QBEValue::Ptr const &ptr) {
-                p = reinterpret_cast<intptr_t>(frame->ptr(ptr));
-                trace("Storing pointer {}", p);
+            [&store_value, &src, &ptr](ILBaseType const &bt) {
+                store_value(src, ptr);
             },
-            [&p](bool const &i) {
-                p = i;
-            },
-            [&p](int8_t const &i) {
-                p = i;
-            },
-            [&p](uint8_t const &i) {
-                p = i;
-            },
-            [&p](int16_t const &i) {
-                p = i;
-            },
-            [&p](uint16_t const &i) {
-                p = i;
-            },
-            [&p](int32_t const &i) {
-                p = i;
-            },
-            [&p](uint32_t const &i) {
-                p = i;
-            },
-            [&p](int64_t const &i) {
-                p = i;
-            },
-            [&p](uint64_t const &i) {
-                p = i;
-            },
-            [&p](float const &f) {
-                p = *reinterpret_cast<intptr_t const *>(&f);
-            },
-            [&p](double const &f) {
-                p = *reinterpret_cast<intptr_t const *>(&f);
+            [&store_value, &dereference_value, &src, &ptr](ILStructType const &strukt) {
+                auto *src_ptr = static_cast<uint8_t *>(src);
+                memset(ptr, 0, size_of(strukt));
+                memcpy(ptr, src_ptr, size_of(strukt));
             } },
-        src.payload);
-    trace(L"Storing value `{}` of type `{}` (size {}) at target `{}` [{} -> {}]", src, type, size_of(type), target, p, frame->ptr(target) - frame->vm.stack.data());
-    memset(frame->ptr(target), 0, size_of(type));
-    memcpy(frame->ptr(target), &p, size_of(type));
-    frame->vm.dump_stack();
-}
-
-void store(pFrame const &frame, ILType type, QBEValue target, ILValue const &src_ref)
-{
-    if (std::holds_alternative<QBEValue::Ptr>(target.payload)) {
-        store(frame, type, std::get<QBEValue::Ptr>(target.payload), src_ref);
-    }
+        src_ref.type);
 }
 
 VM::VM(ILProgram const &program)
@@ -448,10 +383,23 @@ Frame &VM::operator[](size_t ix)
 
 void VM::dump_stack() const
 {
-    trace("  Stack:");
+    trace("  Stack SP = 0x{:04x} Base = 0x{:016x}", stack_pointer, reinterpret_cast<intptr_t>(stack.data()));
     for (auto ix = 0; ix < stack_pointer; ix += sizeof(uint64_t)) {
         trace("    0x{:02x}: 0x{:016x}", ix, *reinterpret_cast<uint64_t const *>(&stack[ix]));
     }
+}
+
+void Frame::dump_frame() const
+{
+    trace("  Variables:");
+    for (auto const &[name, val] : variables) {
+        trace(L"    {}: {:t}", name, val);
+    }
+    trace("  Locals:");
+    for (auto const &[ix, l] : std::ranges::views::enumerate(locals)) {
+        trace(L"    {}: {:t}", ix, l);
+    }
+    vm.dump_stack();
 }
 
 struct ExecError {
@@ -471,7 +419,7 @@ template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, AllocDef const &instruction)
 {
     auto ptr { frame->allocate(instruction.bytes, instruction.alignment) };
-    assign(frame, instruction.target, QBEValue { ILBaseType::L, ptr });
+    assign(frame, instruction.target, ptr);
     ++frame->ip;
     return instruction.target;
 }
@@ -481,13 +429,12 @@ ExecResult execute(ILFunction const &il, pFrame const &frame, BlitDef const &ins
 {
     assert(is_pointer(instruction.src));
     assert(is_pointer(instruction.dest));
-    auto src = frame->ptr(get(frame, instruction.src));
-    auto dest = frame->ptr(get(frame, instruction.dest));
-    info(L"Blit({} ({}), {} ({}), {})", src - frame->vm.stack.data(), instruction.src, dest - frame->vm.stack.data(), instruction.dest, instruction.bytes);
+    auto src = static_cast<uint8_t *>(get(frame, instruction.src));
+    auto dest = static_cast<uint8_t *>(get(frame, instruction.dest));
+    trace(L"Blit({} ({}), {} ({}), {})", src - frame->vm.stack.data(), instruction.src, dest - frame->vm.stack.data(), instruction.dest, instruction.bytes);
     for (auto ix = 0; ix < instruction.bytes; ++ix) {
-        *(uint8_t *) (dest + ix) = *(uint8_t *) (src + ix);
+        *(dest + ix) = *(src + ix);
     }
-    frame->vm.dump_stack();
     ++frame->ip;
     return instruction.dest;
 }
@@ -504,14 +451,18 @@ ExecResult native_call(ILFunction const &il, pFrame const &frame, CallDef const 
     auto return_type { instruction.target.type };
     auto args = frame->allocate(depth, 8);
     for (auto ptr = args; auto const &arg : instruction.args) {
-        store(frame, arg.type, ptr, arg);
-        ptr = { QBEValue::Ptr::PtrType::Stack, ptr.ptr + alignat(size_of(arg.type), 8) };
+        store(frame, ptr, arg);
+        ptr = { static_cast<uint8_t *>(ptr) + alignat(size_of(arg.type), 8) };
     }
     auto     ret = frame->allocate(return_type);
-    uint8_t *ret_ptr = frame->ptr(ret);
-    trace(L"Native call: {} -> {}", instruction.name, return_type);
-    if (native_call(as_utf8(instruction.name), frame->ptr(args), types, static_cast<void *>(ret_ptr), return_type)) {
-        assign(frame, instruction.target, frame->make_from_buffer(return_type, ret));
+    uint8_t *ret_ptr = static_cast<uint8_t *>(ret);
+    auto    *args_ptr = static_cast<uint8_t *>(args);
+    trace(L"Native call: {}(0x{:016x}) -> {}", instruction.name, reinterpret_cast<intptr_t>(args_ptr), return_type);
+    frame->vm.dump_stack();
+    if (native_call(as_utf8(instruction.name), args_ptr, types, ret_ptr, return_type)) {
+        if (!std::holds_alternative<std::monostate>(instruction.target.type)) {
+            assign(frame, instruction.target, frame->make_from_buffer(instruction.target, ret));
+        }
         frame->release(args);
         ++frame->ip;
         return instruction.target;
@@ -586,7 +537,7 @@ template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, JnzDef const &instruction)
 {
     auto expr = get(frame, instruction.expr);
-    frame->ip = (as<bool>(expr))
+    frame->ip = (static_cast<bool>(expr))
         ? il.labels[instruction.on_true]
         : il.labels[instruction.on_false];
     return {};
@@ -603,7 +554,8 @@ template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, LoadDef const &instruction)
 {
     auto src = get(frame, instruction.pointer);
-    assign(frame, instruction.target, frame->make_from_buffer(instruction.target.type, src));
+    trace(L"Load value {:t} into {:t}", src, instruction.target);
+    assign(frame, instruction.target, frame->make_from_buffer(instruction.target, src));
     ++frame->ip;
     return instruction.target;
 }
@@ -621,20 +573,25 @@ ExecResult execute(ILFunction const &il, pFrame const &frame, RetDef const &inst
 template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, StoreDef const &instruction)
 {
-    auto type { instruction.target.type };
     auto target = get(frame, instruction.target);
-    store(frame, type, target, instruction.expr);
+    store(frame, target, instruction.expr);
     ++frame->ip;
     return instruction.target;
 }
 
 ExecResult execute(ILFunction const &il, pFrame const &frame, ILInstruction const &instruction)
 {
-    return std::visit([&il, &frame](auto const &impl) -> ExecResult {
-        trace("impl {}", typeid(impl).name());
-        return execute(il, frame, impl);
-    },
+    trace(L"Executing {}", instruction);
+    auto ret = std::visit(
+        [&il, &frame](auto const &impl) -> ExecResult {
+            return execute(il, frame, impl);
+        },
         instruction.impl);
+    frame->dump_frame();
+    if (ret) {
+        return ret.value();
+    }
+    return std::unexpected(ret.error());
 }
 
 ExecutionResult execute_qbe(VM &vm, ILFile const &file, ILFunction const &function, std::vector<QBEValue> const &args)
@@ -649,8 +606,8 @@ ExecutionResult execute_qbe(VM &vm, ILFile const &file, ILFunction const &functi
         auto n = std::format(L"str_{}", ix + 1);
         if (!vm.globals[file.id].contains(n)) {
             assert((vm.data_pointer + (s.length() + 1) * sizeof(wchar_t)) <= VM::STACK_SIZE);
-            QBEValue val { ILBaseType::L, QBEValue::Ptr { QBEValue::Ptr::PtrType::Data, vm.data_pointer } };
-            trace(L"Set global {}.{} = {} ({})", file.id, n, val, reinterpret_cast<intptr_t>(vm.data.data() + vm.data_pointer));
+            QBEValue val { vm.data.data() + vm.data_pointer };
+            trace(L"Set global {}.{} = {}", file.id, n, val - vm.data.data());
             for (auto ch : s) {
                 *((wchar_t *) (vm.data.data() + vm.data_pointer)) = ch;
                 vm.data_pointer += sizeof(wchar_t);
@@ -664,7 +621,7 @@ ExecutionResult execute_qbe(VM &vm, ILFile const &file, ILFunction const &functi
         auto n = std::format(L"cstr_{}", ix + 1);
         if (!vm.globals[file.id].contains(n)) {
             assert((vm.data_pointer + s.length() + 1) <= VM::STACK_SIZE);
-            QBEValue val { ILBaseType::L, QBEValue::Ptr { QBEValue::Ptr::PtrType::Data, vm.data_pointer } };
+            QBEValue val { vm.data.data() + vm.data_pointer };
             for (auto ch : s) {
                 *((char *) (vm.data.data() + vm.data_pointer)) = ch;
                 ++vm.data_pointer;
@@ -675,7 +632,7 @@ ExecutionResult execute_qbe(VM &vm, ILFile const &file, ILFunction const &functi
             trace(L"Set global {}.{} = {}", file.id, n, val);
         }
     }
-    QBEValue::Ptr base_pointer { QBEValue::Ptr::PtrType::Stack, vm.stack_pointer };
+    QBEValue base_pointer { vm.stack.data() + vm.stack_pointer };
     while (true) {
         trace(L"function `{}`[{}] ip {}", function.name, function.instructions.size(), frame->ip);
         if (auto res = execute(function, frame, function.instructions[frame->ip]); !res.has_value()) {

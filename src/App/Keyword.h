@@ -50,6 +50,7 @@ using Precedence = uint16_t;
     S(LogicalAnd, "&&")        \
     S(LogicalOr, "||")         \
     S(Loop, "loop")            \
+    S(Must, "must")            \
     S(NotEqual, "!=")          \
     S(Null, "null")            \
     S(Public, "public")        \

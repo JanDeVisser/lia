@@ -54,17 +54,17 @@ using namespace Util;
 using namespace Lia;
 
 template<typename T>
-T as(void *ptr, intptr_t offset)
+T as(uint8_t *ptr, intptr_t offset)
 {
     T ret;
-    memcpy(&ret, static_cast<char *>(ptr) + offset, sizeof(T));
+    memcpy(&ret, ptr + offset, sizeof(T));
     return ret;
 }
 
 template<typename T>
-void set(void *ptr, T val)
+void set(uint8_t *ptr, T val)
 {
-    memcpy(static_cast<char *>(ptr), &val, sizeof(T));
+    memcpy(ptr, &val, sizeof(T));
 }
 
 #if IS_ARM64
@@ -397,7 +397,7 @@ bool native_call_arm64(std::string_view name, void *params, std::vector<ILType> 
 
 #endif
 
-bool native_call_x86_64(std::string_view name, void *params, std::vector<ILType> const &types, void *return_value, ILType const &return_type)
+bool native_call_x86_64(std::string_view name, uint8_t *params, std::vector<ILType> const &types, uint8_t *return_value, ILType const &return_type)
 {
     if (types.size() > 6) {
         fatal("Can't do native calls with more than 6 parameters");
@@ -412,12 +412,13 @@ bool native_call_x86_64(std::string_view name, void *params, std::vector<ILType>
     size_t int_reg = 0;
     size_t float_reg = 0;
 
-    auto allocate_value = [&t, &int_reg, &float_reg](ILBaseType bt, void *from, intptr_t offset) {
+    auto allocate_value = [&t, &int_reg, &float_reg](ILBaseType bt, uint8_t *from, intptr_t offset) {
         if (bt <= ILBaseType::L && int_reg >= 6) {
             fatal("Can only pass arguments in registers now");
         } else if (float_reg >= 8) {
             fatal("Can only pass arguments in registers now");
         }
+        trace(L"Allocating register from 0x{:016x}", reinterpret_cast<intptr_t>(from + offset));
         switch (bt) {
         case ILBaseType::B:
         case ILBaseType::SB:
@@ -468,7 +469,7 @@ bool native_call_x86_64(std::string_view name, void *params, std::vector<ILType>
                 },
                 [&allocate_value, &offset, &params](ILStructType const &strukt) {
                     int   align { 0 };
-                    auto *mem = as<void *>(params, offset);
+                    auto *mem = params + offset;
                     offset += alignat(sizeof(void *), 8);
 
                     auto fld_offset = 0;
@@ -506,7 +507,7 @@ bool native_call_x86_64(std::string_view name, void *params, std::vector<ILType>
     return true;
 }
 
-bool native_call(std::string_view name, void *params, std::vector<ILType> const &types, void *return_value, ILType const &return_type)
+bool native_call(std::string_view name, uint8_t *params, std::vector<ILType> const &types, uint8_t *return_value, ILType const &return_type)
 {
     return NATIVE_CALL(name, params, types, return_value, return_type);
 }

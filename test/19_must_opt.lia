@@ -12,7 +12,7 @@ func ret_opt(ok: bool) ?X {
 }
 
 public func main() i32 {
-    x := must ret_opt(true)
+    x: X = must ret_opt(true)
     putint(x.bar)
     endln();
     x = must ret_opt(false)

@@ -137,7 +137,7 @@ bool Operand::matches(pType const &concrete, pType const &hint) const
                 return concrete_value_type == t;
             },
             [&concrete_value_type](TypeKind k) -> bool {
-                return concrete_value_type->is(k);
+                return concrete_value_type->is_a(k);
             },
             [&hint, &concrete_value_type](PseudoType pseudo_type) -> bool {
                 assert(hint != nullptr);

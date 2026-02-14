@@ -168,33 +168,58 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
     auto    lhs_type = try_bind_member(impl.lhs);
 
     if (impl.op == Operator::MemberAccess) {
+        if (lhs_type->kind() == TypeKind::TypeType) {
+            auto  enum_type = std::get<TypeType>(lhs_type->description).type;
+            auto *enum_descr = get_if<EnumType>(enum_type);
+            if (enum_descr == nullptr) {
+                return parser.bind_error(impl.lhs->location,
+                    L"A type in the left-hand side of a member access must be an `enum` type");
+            }
+            if (!is<Identifier>(impl.rhs)) {
+                return parser.bind_error(impl.rhs->location,
+                    L"The right-hand side of a member access must be an identifier");
+            }
+            auto find_value = [&enum_descr, &parser, &impl](std::wstring_view const label) -> std::expected<EnumType::Value, std::wstring> {
+                for (auto const &value : enum_descr->values) {
+                    if (value.label == label) {
+                        return value;
+                    }
+                }
+                return std::unexpected(std::format(L"Unknown enum value `{}`", label));
+            };
+            if (auto enum_value = find_value(get<Identifier>(impl.rhs).identifier); !enum_value) {
+                return parser.bind_error(impl.rhs->location, enum_value.error());
+            }
+            impl.rhs->bound_type = TypeRegistry::string;
+            impl.rhs->status = ASTStatus::Bound;
+            return enum_type;
+        }
         if (lhs_type->kind() != TypeKind::ReferenceType && !is<Identifier>(impl.lhs)) {
             return parser.bind_error(
-                n->location,
+                impl.lhs->location,
                 L"Left hand side of member access operator must be value reference");
         }
         auto lhs_value_type = lhs_type->value_type();
         if (lhs_value_type->kind() != TypeKind::StructType) {
             return parser.bind_error(
-                n->location,
+                impl.lhs->location,
                 L"Left hand side of member access operator must have struct type");
         }
-        if (auto rhs_id = get_if<Identifier>(impl.rhs); rhs_id == nullptr) {
-            return parser.bind_error(
-                n->location,
-                L"Right hand side of member access operator must be identifier");
-        } else {
-            auto const &s = std::get<StructType>(lhs_value_type->description);
-            for (auto const &f : s.fields) {
-                if (f.name == rhs_id->identifier) {
-                    impl.rhs->bound_type = TypeRegistry::the().referencing(f.type);
-                    impl.rhs->status = ASTStatus::Bound;
-                    return impl.rhs->bound_type;
+        auto const &struct_descr = get<StructType>(lhs_value_type);
+        auto        find_member = [&struct_descr, &parser, &impl](std::wstring_view const name) -> std::expected<StructType::Field, std::wstring> {
+            for (auto const &field : struct_descr.fields) {
+                if (field.name == name) {
+                    return field;
                 }
             }
-            return parser.bind_error(
-                n->location,
-                L"Unknown field `{}`", rhs_id->identifier);
+            return std::unexpected(std::format(L"Unknown struct field `{}`", name));
+        };
+        if (auto struct_field = find_member(get<Identifier>(impl.rhs).identifier); !struct_field) {
+            return parser.bind_error(impl.rhs->location, struct_field.error());
+        } else {
+            impl.rhs->bound_type = TypeRegistry::string;
+            impl.rhs->status = ASTStatus::Bound;
+            return TypeRegistry::the().referencing(struct_field->type);
         }
     }
 
@@ -218,39 +243,63 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
     }
 
     if (impl.op == Operator::Cast) {
+        if (rhs_value_type->kind() != TypeKind::TypeType) {
+            return parser.bind_error(
+                impl.rhs->location,
+                L"`Cast` operator requires a type as right hand side");
+        }
+        auto target_type = get<TypeType>(rhs_value_type).type;
         if (auto const lhs_const = get_if<Constant>(impl.lhs); lhs_const != nullptr) {
-            if (is<TypeSpecification>(impl.rhs)) {
-                if (auto type = resolve(impl.rhs); type != nullptr) {
-                    if (auto const &casted = coerce(impl.lhs, type); casted != nullptr) {
-                        return { type };
-                    }
-                }
+            if (auto const &casted = coerce(impl.lhs, target_type); casted != nullptr) {
+                return { target_type };
             }
         }
         return std::visit(
             overloads {
-                [&rhs_value_type, &n, &parser](IntType const &lhs_int_type, IntType const &rhs_int_type) -> BindResult {
+                [&target_type, &n, &parser](IntType const &lhs_int_type, IntType const &rhs_int_type) -> BindResult {
                     if (lhs_int_type.width_bits > rhs_int_type.width_bits) {
                         return parser.bind_error(
                             n->location,
                             L"Invalid argument type. Cannot narrow integers");
                     }
-                    return { rhs_value_type };
+                    return { target_type };
                 },
-                [&rhs_value_type, &n, &parser](SliceType const &lhs_slice_type, ZeroTerminatedArray const &rhs_zero_terminated_type) -> BindResult {
+                [&target_type, &n, &parser](EnumType const &lhs_enum_type, IntType const &rhs_int_type) -> BindResult {
+                    auto lhs_int { lhs_enum_type.underlying_type };
+                    assert(std::holds_alternative<IntType>(lhs_int->description));
+                    auto lhs_int_type { std::get<IntType>(lhs_int->description) };
+                    if (lhs_int_type.width_bits > rhs_int_type.width_bits) {
+                        return parser.bind_error(
+                            n->location,
+                            L"Invalid argument type. Cannot narrow integers");
+                    }
+                    return { target_type };
+                },
+                [&target_type, &n, &parser](IntType const &lhs_int_type, EnumType const &rhs_enum_type) -> BindResult {
+                    auto rhs_int { rhs_enum_type.underlying_type };
+                    assert(std::holds_alternative<IntType>(rhs_int->description));
+                    auto rhs_int_type { std::get<IntType>(rhs_int->description) };
+                    if (lhs_int_type.width_bits > rhs_int_type.width_bits) {
+                        return parser.bind_error(
+                            n->location,
+                            L"Invalid argument type. Cannot narrow integers");
+                    }
+                    return { target_type };
+                },
+                [&target_type, &n, &parser](SliceType const &lhs_slice_type, ZeroTerminatedArray const &rhs_zero_terminated_type) -> BindResult {
                     if (lhs_slice_type.slice_of != TypeRegistry::u32 || rhs_zero_terminated_type.array_of != TypeRegistry::u8) {
                         return parser.bind_error(
                             n->location,
                             L"Invalid argument type. Cannot cast slices to zero-terminated arrays except for strings");
                     }
-                    return { rhs_value_type };
+                    return { target_type };
                 },
                 [&parser, &n](auto const &, auto const &) -> BindResult {
                     return parser.bind_error(
                         n->location,
                         L"Invalid argument type. Can only cast integers");
                 } },
-            lhs_value_type->description, rhs_value_type->description);
+            lhs_value_type->description, target_type->description);
     }
 
     auto check_operators = [](Operator op, pType op_lhs_type, pType op_rhs_type) -> pType {
@@ -594,30 +643,77 @@ template<>
 BindResult bind(ASTNode n, Enum &impl)
 {
     assert(n != nullptr);
-    auto    &parser = *(n.repo);
-    EnumType enoom;
-    size_t   ix = 0;
-    for (auto const &v : impl.values) {
-        pType payload { nullptr };
-        auto  enum_value = get<EnumValue>(v);
-        if (enum_value.payload != nullptr) {
-            payload = resolve(enum_value.payload);
-            if (payload == nullptr) {
-                return n.bind_error(L"Could not resolve type `{}`", to_string(enum_value.payload));
-            }
-        }
-        size_t value = (enum_value.value != nullptr) ? as<int64_t>(get<Constant>(enum_value.value).bound_value.value()) : ix;
-        enoom.values.emplace_back(enum_value.label, value, payload);
-        ++ix;
-    }
-    enoom.underlying_type = nullptr;
+    auto &parser = *(n.repo);
+
+    auto is_tagged_union = std::any_of(
+        impl.values.cbegin(),
+        impl.values.cend(),
+        [](ASTNode const &v) -> bool { return std::get<EnumValue>(v->node).payload != nullptr; });
+
+    pType underlying_type { nullptr };
     if (impl.underlying_type != nullptr) {
-        enoom.underlying_type = resolve(impl.underlying_type);
-        if (enoom.underlying_type == nullptr) {
+        underlying_type = resolve(impl.underlying_type);
+        if (underlying_type == nullptr) {
             return n.bind_error(L"Could not resolve type `{}`", impl.underlying_type);
         }
     }
-    auto ret = make_type(impl.name, enoom);
+
+    pType    enum_type { nullptr };
+    EnumType enoom;
+    if (underlying_type != nullptr && is<EnumType>(underlying_type)) {
+        if (!is_tagged_union) {
+            return n.bind_error(L"Attempt to create enum with existing enum `{}` as underlying type", impl.underlying_type);
+        }
+        enoom = get<EnumType>(underlying_type);
+        enum_type = underlying_type;
+    } else if (underlying_type == nullptr || is<IntType>(underlying_type)) {
+        if (underlying_type == nullptr) {
+            underlying_type = TypeRegistry::i32;
+        }
+        enoom.underlying_type = underlying_type;
+        for (auto const &[ix, v] : std::views::enumerate(impl.values)) {
+            auto enum_value = get<EnumValue>(v);
+            // TODO there are many ways the numbering of enum values can get
+            // confused.
+            size_t value = (enum_value.value != nullptr) ? as<int64_t>(get<Constant>(enum_value.value).bound_value.value()) : ix;
+            enoom.values.emplace_back(enum_value.label, value);
+        }
+    } else if (is_tagged_union) {
+        return n.bind_error(L"Invalid underlying type `{}` for tagged union", impl.underlying_type);
+    } else {
+        return n.bind_error(L"Invalid underlying type `{}` for enum", impl.underlying_type);
+    }
+    if (!is_tagged_union) {
+        auto ret = make_type(impl.name, enoom);
+        parser.register_type(impl.name, ret);
+        return make_type(impl.name, TypeType { .type = ret });
+    }
+    if (enum_type == nullptr) {
+        enum_type = make_type(std::format(L"$enum${}", impl.name), enoom);
+    }
+    TaggedUnionType tagged_union;
+    for (auto const &[ix, v] : std::ranges::views::enumerate(impl.values)) {
+        pType payload { nullptr };
+        auto  tagged_value = get<EnumValue>(v);
+        if (tagged_value.payload != nullptr) {
+            payload = resolve(tagged_value.payload);
+            if (payload == nullptr) {
+                return n.bind_error(L"Could not resolve type `{}`", to_string(tagged_value.payload));
+            }
+        }
+        auto sz = tagged_union.tags.size();
+        for (auto const &ev : enoom.values) {
+            if (ev.label == tagged_value.label) {
+                tagged_union.tags.emplace_back(ev.value, payload);
+                break;
+            }
+        }
+        if (sz == tagged_union.tags.size()) {
+            return n.bind_error(L"Unrecognized enum label `{}` in definition of of tagged union", tagged_value.label);
+        }
+    }
+    tagged_union.tag_type = enum_type;
+    auto ret = make_type(impl.name, tagged_union);
     parser.register_type(impl.name, ret);
     return make_type(impl.name, TypeType { .type = ret });
 }
@@ -661,7 +757,7 @@ BindResult bind(ASTNode n, FunctionDeclaration &impl)
 {
     return TypeRegistry::the().function_of(
         try_bind_nodes(impl.parameters),
-        try_bind(impl.return_type));
+        get<TypeType>(try_bind(impl.return_type)).type);
 }
 
 template<>
@@ -748,7 +844,7 @@ BindResult bind(ASTNode n, Module &impl)
 template<>
 BindResult bind(ASTNode n, Parameter &impl)
 {
-    return bind(impl.type_name);
+    return get<TypeType>(try_bind(impl.type_name)).type;
 }
 
 template<>
@@ -818,7 +914,7 @@ BindResult bind(ASTNode n, Struct &impl)
 template<>
 BindResult bind(ASTNode n, StructMember &impl)
 {
-    return bind(impl.member_type);
+    return get<TypeType>(try_bind(impl.member_type)).type;
 }
 
 template<>
@@ -828,7 +924,7 @@ BindResult bind(ASTNode n, TypeSpecification &impl)
     if (ret == nullptr) {
         return BindError { ASTStatus::Undetermined };
     }
-    return ret;
+    return TypeRegistry::the().type_of(ret);
 }
 
 template<>
@@ -900,6 +996,8 @@ BindResult bind(ASTNode n, VariableDeclaration &impl)
 
     if (my_type == nullptr) {
         my_type = init_type;
+    } else {
+        my_type = get<TypeType>(my_type).type;
     }
     if (init_type != nullptr && !init_type->compatible(my_type) && !init_type->assignable_to(my_type)) {
         return n.bind_error(

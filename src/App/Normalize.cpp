@@ -83,6 +83,17 @@ ASTNode normalize(ASTNode n, BinaryExpression const &impl)
     }
     case Operator::Sequence:
         return make_expression_list();
+    case Operator::MemberAccess: {
+        auto aggregate = normalize(impl.lhs);
+        auto member = normalize(impl.rhs);
+        if (is<Constant>(member)) {
+            auto const &constant = get<Constant>(member);
+            if (constant.bound_value && constant.bound_value->type == TypeRegistry::string) {
+                member = make_node<Identifier>(member, constant.bound_value->to_string());
+            }
+        }
+        return make_node<BinaryExpression>(n, aggregate, impl.op, member);
+    } break;
     default:
         if (assign_ops.contains(impl.op)) {
             auto const bin_expr = make_node<BinaryExpression>(

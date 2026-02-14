@@ -95,10 +95,14 @@ bool Namespace::has_variable(std::wstring const &name) const
 pType Namespace::type_of(std::wstring const &name) const
 {
     auto n = find_variable(name);
-    if (n == nullptr) {
-        return nullptr;
+    if (n != nullptr) {
+        return n->bound_type;
     }
-    return n->bound_type;
+    auto t = find_type(name);
+    if (t != nullptr) {
+        return TypeRegistry::the().type_of(t);
+    }
+    return nullptr;
 }
 
 void Namespace::register_variable(std::wstring name, ASTNode node)

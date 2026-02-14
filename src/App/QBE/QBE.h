@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include "Util/Ptr.h"
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -257,6 +256,24 @@ struct ILValue {
         double,
         std::vector<ILValue>>;
 
+    ILValue()
+        : type(std::monostate {})
+        , inner(0)
+    {
+    }
+
+    template<typename T>
+    ILValue(ILType const &type, T const &value)
+        : type(type)
+        , inner(value)
+    {
+    }
+
+    operator bool() const
+    {
+        return std::holds_alternative<std::monostate>(type);
+    }
+
     template<typename TypeDesc>
     static ILValue local(int var, TypeDesc td)
     {
@@ -334,7 +351,7 @@ struct ILValue {
         return { std::monostate {}, 0 };
     }
 
-    ILType       type;
+    ILType       type { ILBaseType::V };
     ILValueInner inner;
 };
 
@@ -342,24 +359,6 @@ using ILValues = std::vector<ILValue>;
 
 std::wostream &operator<<(std::wostream &os, ILValue const &value);
 std::wostream &operator<<(std::wostream &os, ILOperation const &op);
-
-struct QBEOperand {
-    ILValue value;
-    ASTNode node;
-};
-
-struct QBEBinExpr {
-    QBEOperand lhs;
-    Operator   op;
-    QBEOperand rhs;
-};
-
-struct QBEUnaryExpr {
-    Operator   op;
-    QBEOperand operand;
-};
-
-using GenResult = std::expected<ILValue, std::wstring>;
 
 struct AllocDef {
     size_t  alignment;
@@ -406,6 +405,13 @@ struct ExprDef {
     ILValue     target;
 
     friend std::wostream &operator<<(std::wostream &os, ExprDef const &impl);
+};
+
+struct ExtDef {
+    ILValue source;
+    ILValue target;
+
+    friend std::wostream &operator<<(std::wostream &os, ExtDef const &impl);
 };
 
 struct HltDef {
@@ -495,6 +501,7 @@ using ILInstructionImpl = std::variant<
     CastDef,
     CopyDef,
     ExprDef,
+    ExtDef,
     HltDef,
     JmpDef,
     JnzDef,
@@ -725,7 +732,98 @@ struct VM {
 
 using ExecutionResult = std::expected<QBEValue, std::wstring>;
 
-ILValue                                dereference(QBEOperand const &operand, QBEContext &ctx);
+struct QBEOperand {
+    ASTNode node;
+    pType   ptype;
+
+    using GenResult = std::expected<QBEOperand, std::wstring>;
+
+    QBEOperand() = default;
+    QBEOperand(QBEOperand const &) = default;
+    QBEOperand(ASTNode const &n, pType const &t)
+        : node(n)
+        , ptype(t)
+    {
+    }
+
+    QBEOperand(ASTNode const &n, pType const &t, ILValue const &value)
+        : node(n)
+        , ptype(t)
+        , value(value)
+    {
+    }
+
+    QBEOperand(ASTNode const &n)
+        : node(n)
+        , ptype(n->bound_type)
+    {
+    }
+
+    QBEOperand(ASTNode const &n, ILValue const &value)
+        : node(n)
+        , ptype(n->bound_type)
+        , value(value)
+    {
+    }
+
+    QBEOperand(QBEOperand const &op, ILValue value)
+        : node(op.node)
+        , ptype(op.ptype)
+        , value(value)
+    {
+    }
+
+    QBEOperand(QBEOperand const &op, pType const &type, ILValue value)
+        : node(op.node)
+        , ptype(type)
+        , value(value)
+    {
+    }
+
+    GenResult      get_value(QBEContext &ctx);
+    ILValue const &get_value() const
+    {
+        assert(value.has_value());
+        return *value;
+    }
+
+    void set_value(ILValue const &v)
+    {
+        value = v;
+    }
+
+private:
+    std::optional<ILValue> value {};
+};
+
+struct QBEBinExpr {
+    ASTNode    node;
+    QBEOperand lhs;
+    Operator   op;
+    QBEOperand rhs;
+};
+
+struct QBEUnaryExpr {
+    ASTNode    node;
+    Operator   op;
+    QBEOperand operand;
+};
+
+#define TRY_DEREFERENCE(op, ctx)                             \
+    (                                                        \
+        {                                                    \
+            QBEOperand __op;                                 \
+            if (auto __res = dereference(op, ctx); !__res) { \
+                return std::unexpected(__res.error());       \
+            } else {                                         \
+                __op = (__res.value());                      \
+            }                                                \
+            (__op);                                          \
+        })
+
+using GenResult = QBEOperand::GenResult;
+
+GenResult                              dereference(QBEOperand const &operand, QBEContext &ctx);
 GenResult                              qbe_operator(QBEBinExpr const &expr, QBEContext &ctx);
 GenResult                              qbe_operator(QBEUnaryExpr const &expr, QBEContext &ctx);
 std::expected<ILProgram, std::wstring> generate_qbe(ASTNode const &node);

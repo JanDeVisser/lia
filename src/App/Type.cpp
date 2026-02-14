@@ -1,4 +1,4 @@
-/*ty
+/*
  * Copyright (c) 2025, Jan de Visser <jan@finiandarcy.com>
  *
  * SPDX-License-Identifier: MIT
@@ -167,26 +167,41 @@ std::wstring EnumType::to_string() const
 
 intptr_t EnumType::size_of() const
 {
-    intptr_t maxsize { 0 };
-    std::for_each(
-        values.begin(),
-        values.end(),
-        [&maxsize, this](Value const &value) -> void {
-            if (value.payload) {
-                maxsize = std::max(alignat(value.payload->size_of(), align_of()), maxsize);
-            }
-        });
-    return alignat(underlying_type->size_of(), align_of()) + maxsize;
+    return underlying_type->size_of();
 }
 
 intptr_t EnumType::align_of() const
 {
-    intptr_t ret { underlying_type->align_of() };
+    return underlying_type->align_of();
+}
+
+std::wstring TaggedUnionType::to_string() const
+{
+    return std::format(L"TaggedUnion({} tags)", tags.size());
+}
+
+intptr_t TaggedUnionType::size_of() const
+{
+    intptr_t maxsize { 0 };
     std::for_each(
-        values.begin(),
-        values.end(),
-        [&ret](Value const &value) -> void {
-            ret = std::max((value.payload) ? value.payload->align_of() : 0, ret);
+        tags.begin(),
+        tags.end(),
+        [&maxsize, this](Tag const &tag) -> void {
+            if (tag.payload) {
+                maxsize = std::max(alignat(tag.payload->size_of(), align_of()), maxsize);
+            }
+        });
+    return alignat(tag_type->size_of(), align_of()) + maxsize;
+}
+
+intptr_t TaggedUnionType::align_of() const
+{
+    intptr_t ret { tag_type->align_of() };
+    std::for_each(
+        tags.begin(),
+        tags.end(),
+        [&ret](Tag const &tag) -> void {
+            ret = std::max((tag.payload) ? tag.payload->align_of() : 0, ret);
         });
     return ret;
 }
@@ -268,7 +283,7 @@ std::wstring TypeType::to_string() const
     return std::format(L"TypeOf({})", type->to_string());
 }
 
-bool Type::is(TypeKind kind) const
+bool Type::is_a(TypeKind kind) const
 {
     return description.index() == static_cast<int>(kind);
 }
@@ -296,34 +311,42 @@ std::wstring Type::to_string() const
 
 intptr_t Type::size_of() const
 {
-    return std::visit(overloads {
-                          [](std::monostate const &) -> intptr_t {
-                              UNREACHABLE();
-                              return 0;
-                          },
-                          [](auto const &descr) -> intptr_t {
-                              return descr.size_of();
-                          } },
+    return std::visit(
+        overloads {
+            [](std::monostate const &) -> intptr_t {
+                UNREACHABLE();
+                return 0;
+            },
+            [](auto const &descr) -> intptr_t {
+                return descr.size_of();
+            } },
         description);
 }
 
 intptr_t Type::align_of() const
 {
-    return std::visit(overloads {
-                          [](std::monostate const &) -> intptr_t {
-                              UNREACHABLE();
-                              return 0;
-                          },
-                          [](auto const &descr) -> intptr_t {
-                              return descr.align_of();
-                          } },
+    return std::visit(
+        overloads {
+            [](std::monostate const &) -> intptr_t {
+                UNREACHABLE();
+                return 0;
+            },
+            [](auto const &descr) -> intptr_t {
+                return descr.align_of();
+            } },
         description);
 }
 
 bool Type::compatible(pType const &other) const
 {
-    if (id == other.id) {
+    if (id == other) {
         return true;
+    }
+    if (is<ReferenceType>(id)) {
+        return get<ReferenceType>(id).referencing->compatible(other);
+    }
+    if (is<ReferenceType>(other)) {
+        return compatible(get<ReferenceType>(other).referencing);
     }
     auto left = (description.index() <= other->description.index()) ? id : other;
     auto right = (description.index() <= other->description.index()) ? other : id;
@@ -362,10 +385,10 @@ bool Type::compatible(pType const &other) const
             },
             [](auto const &, std::monostate const &) -> bool {
                 UNREACHABLE();
-                return 0;
+                return false;
             },
             [this, &other](auto const &, auto const &) -> bool {
-                return id == other->id;
+                return false;
             } },
         left->description, right->description);
 }
@@ -386,6 +409,9 @@ bool Type::assignable_to(pType const &lhs) const
             },
             [this, &rhs](OptionalType const &optional, auto const &) -> bool {
                 return optional.type == rhs;
+            },
+            [&lhs](ReferenceType const &ref, auto const &) -> bool {
+                return ref.referencing->assignable_to(lhs);
             },
             [this, &lhs](auto const &, auto const &) -> bool {
                 return false;
@@ -723,18 +749,19 @@ pType TypeRegistry::type_of(pType type)
 {
     assert(type);
     for (auto const &t : types) {
-        if (std::visit(overloads {
-                           [&type](TypeType const descr) -> bool {
-                               return descr.type == type;
-                           },
-                           [](auto const &) -> bool {
-                               return false;
-                           } },
+        if (std::visit(
+                overloads {
+                    [&type](TypeType const descr) -> bool {
+                        return descr.type == type;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
                 t.description)) {
             return t.id;
         }
     }
-    auto ret = make_type(std::format(L"{}?", type->name), TypeType { type });
+    auto ret = make_type(std::format(L"meta({})", type->name), TypeType { type });
     return ret;
 }
 

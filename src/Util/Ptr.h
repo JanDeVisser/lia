@@ -100,7 +100,16 @@ public:
 
     bool operator==(Ptr const &other) const
     {
-        return (repo == other.repo) && (id == other.id);
+        if (repo != other.repo) {
+            return false;
+        }
+        if (id.has_value() ^ other.id.has_value()) {
+            return false;
+        }
+        if (!id.has_value()) {
+            return true;
+        }
+        return (id.value() == other.id.value());
     }
 
     bool operator==(std::nullptr_t const &) const

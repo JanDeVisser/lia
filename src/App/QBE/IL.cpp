@@ -173,6 +173,11 @@ void flatten_type(BoolType const &, std::vector<ILBaseType> &components)
     components.emplace_back(ILBaseType::W);
 }
 
+void flatten_type(EnumType const &enum_type, std::vector<ILBaseType> &components)
+{
+    flatten_type(enum_type.underlying_type, components);
+}
+
 void flatten_type(FloatType const &flt_type, std::vector<ILBaseType> &components)
 {
     components.emplace_back(qbe_type_code(flt_type));
@@ -199,6 +204,11 @@ void flatten_type(StructType const &strukt, std::vector<ILBaseType> &components)
     for (auto const &field : strukt.fields) {
         flatten_type(field.type, components);
     }
+}
+
+void flatten_type(TypeType const &type_type, std::vector<ILBaseType> &components)
+{
+    flatten_type(type_type.type, components);
 }
 
 void flatten_type(OptionalType const &opt, std::vector<ILBaseType> &components)
@@ -272,14 +282,20 @@ ILType qbe_type(pType const &type)
             [&type](SliceType const &slice) -> ILType {
                 return ILStructType { L":slice_t", flatten_type(type) };
             },
+            [&type](EnumType const &enum_type) -> ILType {
+                return qbe_type(enum_type.underlying_type);
+            },
             [&type](OptionalType const &opt) -> ILType {
                 return ILStructType { std::format(L":opt{}", *(type.id)), flatten_type(type) };
             },
             [&type](StructType const &strukt) -> ILType {
                 return ILStructType { std::format(L":struct{}", *(type.id)), flatten_type(type) };
             },
+            [&type](TypeType const &type_type) -> ILType {
+                return ILStructType { std::format(L":type{}", *(type.id)), flatten_type(type) };
+            },
             [](auto const &descr) -> ILType {
-                NYI("return_type() for type description type `{}`", typeid(decltype(descr)).name());
+                NYI("qbe_type() for type description type `{}`", typeid(decltype(descr)).name());
             } },
         type->description);
 }
@@ -632,6 +648,19 @@ std::wostream &operator<<(std::wostream &os, ExprDef const &impl)
         op << basetype(impl.lhs.type);
     }
     os << "    " << impl.target << " = " << targettype(impl.target.type) << " " << op.str() << " " << impl.lhs << ", " << impl.rhs;
+    return os;
+}
+
+std::wostream &operator<<(std::wostream &os, ExtDef const &impl)
+{
+    os << "    "
+       << impl.target
+       << " = "
+       << targettype(impl.target.type)
+       << " ext"
+       << get<ILBaseType>(impl.source.type)
+       << " "
+       << impl.source;
     return os;
 }
 

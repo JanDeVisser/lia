@@ -44,6 +44,7 @@ namespace Lia {
     S(RangeType)           \
     S(TypeAlias)           \
     S(EnumType)            \
+    S(TaggedUnionType)     \
     S(OptionalType)        \
     S(ErrorType)           \
     S(StructType)          \
@@ -327,12 +328,26 @@ struct EnumType {
     struct Value {
         std::wstring label;
         int64_t      value;
-        pType        payload;
     };
     using Values = std::vector<Value>;
 
     pType  underlying_type;
     Values values;
+
+    std::wstring to_string() const;
+    intptr_t     size_of() const;
+    intptr_t     align_of() const;
+};
+
+struct TaggedUnionType {
+    struct Tag {
+        int64_t value;
+        pType   payload;
+    };
+    using Tags = std::vector<Tag>;
+
+    pType tag_type;
+    Tags  tags;
 
     std::wstring to_string() const;
     intptr_t     size_of() const;
@@ -414,7 +429,7 @@ struct Type {
     {
     }
 
-    bool                          is(TypeKind kind) const;
+    bool                          is_a(TypeKind kind) const;
     TypeKind                      kind() const;
     std::wstring                  to_string() const;
     intptr_t                      size_of() const;
@@ -479,7 +494,7 @@ N *get_if(pType const &type)
 }
 
 template<class N>
-N &get(pType const &type)
+N const &get(pType const &type)
 {
     assert(type);
     return std::get<N>(type->description);

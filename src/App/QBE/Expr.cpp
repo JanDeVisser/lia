@@ -103,14 +103,12 @@ static void check_division_by_zero(QBEOperand const &rhs, QBEContext &ctx)
     ctx.add_operation(LabelDef { carry_on });
 }
 
-static void check_optional(QBEOperand const &val, OptionalType const &optional, QBEContext &ctx)
+static void check_optional(QBEOperand const &val, OptionalType const &optional, int value_unset, int value_set, QBEContext &ctx)
 {
     auto zero { ILValue::local(++ctx.next_var, ILBaseType::W) };
     auto flag_ptr { ILValue::pointer(++ctx.next_var) };
     auto flag_val { ILValue::local(++ctx.next_var, ILBaseType::W) };
     auto flag_val_2 { ILValue::local(++ctx.next_var, ILBaseType::W) };
-    int  carry_on = ++ctx.next_label;
-    int  abort_mission = ++ctx.next_label;
     ctx.add_operation(
         ExprDef {
             val.get_value(),
@@ -140,9 +138,16 @@ static void check_optional(QBEOperand const &val, OptionalType const &optional, 
     ctx.add_operation(
         JnzDef {
             zero,
-            abort_mission,
-            carry_on,
+            value_unset,
+            value_set,
         });
+}
+
+static void optional_must(QBEOperand const &val, OptionalType const &optional, QBEContext &ctx)
+{
+    int carry_on = ++ctx.next_label;
+    int abort_mission = ++ctx.next_label;
+    check_optional(val, optional, abort_mission, carry_on, ctx);
     ctx.add_operation(LabelDef { abort_mission });
     ILValue empty_optional_id = ctx.add_string(empty_optional);
     CallDef call_def = {
@@ -153,6 +158,16 @@ static void check_optional(QBEOperand const &val, OptionalType const &optional, 
     call_def.args.push_back(ILValue::integer(wcslen(empty_optional), ILBaseType::L));
     ctx.add_operation(call_def);
     ctx.add_operation(LabelDef { carry_on });
+}
+
+static GenResult unwrap_optional(ASTNode const &unwrapped, QBEOperand const &optional, QBEContext &ctx)
+{
+    auto reference = QBEOperand {
+        unwrapped,
+        TypeRegistry::the().referencing(get<OptionalType>(optional.ptype).type),
+        optional.get_value(),
+    };
+    return TRY_DEREFERENCE(reference, ctx);
 }
 
 template<>
@@ -292,6 +307,43 @@ GenResult qbe_operator(QBEBinExpr const &expr, StructType const &lhs, auto const
         return QBEOperand { expr.node, ret };
     }
     NYI("QBE mapping for struct operator `{}`", Operator_name(expr.op));
+}
+
+GenResult qbe_operator(QBEBinExpr const &expr, OptionalType const &lhs, auto const &rhs, QBEContext &ctx)
+{
+    if (expr.op == Operator::LogicalOr) {
+        assert(expr.rhs.ptype == lhs.type);
+        int  use_value = ++ctx.next_label;
+        int  use_alternative = ++ctx.next_label;
+        int  done = ++ctx.next_label;
+        auto ret = ILValue::local(++ctx.next_var, qbe_type(lhs.type));
+        auto deref = TRY_DEREFERENCE(expr.lhs, ctx);
+        check_optional(deref, lhs, use_alternative, use_value, ctx);
+        ctx.add_operation(LabelDef { use_alternative });
+        auto alternative = TRY_DEREFERENCE(expr.rhs, ctx);
+        ctx.add_operation(
+            CopyDef {
+                alternative.get_value(),
+                ret,
+            });
+        ctx.add_operation(
+            JmpDef {
+                done,
+            });
+        ctx.add_operation(LabelDef { use_value });
+        auto val = unwrap_optional(expr.node, deref, ctx);
+        if (!val) {
+            return std::unexpected(val.error());
+        }
+        ctx.add_operation(
+            CopyDef {
+                val.value().get_value(),
+                ret,
+            });
+        ctx.add_operation(LabelDef { done });
+        return QBEOperand { expr.node, lhs.type, ret };
+    }
+    NYI("QBE mapping for optional operator `{}`", Operator_name(expr.op));
 }
 
 GenResult qbe_operator(QBEBinExpr const &expr, TypeType const &lhs, auto const &rhs, QBEContext &ctx)
@@ -452,14 +504,9 @@ GenResult qbe_operator(QBEUnaryExpr const &expr, OptionalType const &optional, Q
     auto var = ILValue::local(++ctx.next_var, operand.get_value().type);
     switch (expr.op) {
     case Operator::Unwrap: {
-        check_optional(operand, optional, ctx);
+        optional_must(operand, optional, ctx);
         auto ret = ILValue::pointer(++ctx.next_var);
-        ctx.add_operation(
-            CopyDef {
-                operand.get_value(),
-                ret,
-            });
-        return QBEOperand { expr.node, ret };
+        return unwrap_optional(expr.node, operand, ctx);
     } break;
     case Operator::LogicalInvert: {
         auto flag_ptr = ILValue::pointer(++ctx.next_var);

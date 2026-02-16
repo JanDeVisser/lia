@@ -86,29 +86,29 @@ enum class PseudoType {
     Rhs,
     Refer,
     Boolean,
+    Byte,
     Long,
+    String,
 };
+
+using OperandType = std::variant<TypeKind, PseudoType>;
 
 struct Operand {
-    using OperandType = std::variant<pType, TypeKind, PseudoType>;
-
     OperandType type;
 
-    Operand(pType t);
     Operand(TypeKind k);
     Operand(PseudoType pseudo_type);
-    [[nodiscard]] bool matches(pType const &concrete, pType const &hint = nullptr) const;
+    bool matches(pType const &concrete, pType const &hint = nullptr) const;
 };
 
-using OpResult = std::variant<pType, PseudoType>;
-
 struct BinaryOperator {
-    Operand  lhs;
-    Operator op;
-    Operand  rhs;
-    OpResult result;
+    Operand     lhs;
+    Operator    op;
+    Operand     rhs;
+    OperandType result;
 
-    [[nodiscard]] bool matches(pType const &concrete_lhs, pType const &concrete_rhs) const;
+    bool  matches(pType const &concrete_lhs, pType const &concrete_rhs) const;
+    pType return_type(pType const &lhs_type, pType const &rhs_type) const;
 };
 
 struct AssignOperator {
@@ -117,9 +117,9 @@ struct AssignOperator {
 };
 
 struct UnaryOperator {
-    Operator op;
-    Operand  operand;
-    OpResult result;
+    Operator    op;
+    Operand     operand;
+    OperandType result;
 };
 
 extern std::vector<BinaryOperator>  binary_ops;

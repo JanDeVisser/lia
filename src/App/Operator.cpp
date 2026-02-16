@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <ranges>
-
 #include <App/Operator.h>
 
 namespace Lia {
@@ -17,31 +15,32 @@ std::vector<BinaryOperator> binary_ops {
     { TypeKind::FloatType, Operator::Subtract, PseudoType::Lhs, PseudoType::Lhs },
     { TypeKind::IntType, Operator::Multiply, PseudoType::Lhs, PseudoType::Lhs },
     { TypeKind::FloatType, Operator::Multiply, PseudoType::Lhs, PseudoType::Lhs },
-    { TypeRegistry::string, Operator::Multiply, TypeKind::IntType, PseudoType::Lhs },
+    { PseudoType::String, Operator::Multiply, TypeKind::IntType, PseudoType::Lhs },
     { TypeKind::IntType, Operator::Divide, PseudoType::Lhs, PseudoType::Lhs },
     { TypeKind::FloatType, Operator::Divide, PseudoType::Lhs, PseudoType::Lhs },
     { TypeKind::IntType, Operator::Modulo, PseudoType::Lhs, PseudoType::Lhs },
     { TypeKind::FloatType, Operator::Modulo, PseudoType::Lhs, PseudoType::Lhs },
-    { TypeKind::IntType, Operator::Equals, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::FloatType, Operator::Equals, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::OptionalType, Operator::Equals, TypeKind::VoidType, TypeRegistry::boolean },
-    { TypeKind::IntType, Operator::NotEqual, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::FloatType, Operator::NotEqual, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::IntType, Operator::Less, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::FloatType, Operator::Less, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::IntType, Operator::LessEqual, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::FloatType, Operator::LessEqual, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::IntType, Operator::Greater, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::FloatType, Operator::Greater, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::IntType, Operator::GreaterEqual, PseudoType::Lhs, TypeRegistry::boolean },
-    { TypeKind::FloatType, Operator::GreaterEqual, PseudoType::Lhs, TypeRegistry::boolean },
+    { TypeKind::IntType, Operator::Equals, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::FloatType, Operator::Equals, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::OptionalType, Operator::Equals, TypeKind::VoidType, PseudoType::Boolean },
+    { TypeKind::IntType, Operator::NotEqual, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::FloatType, Operator::NotEqual, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::IntType, Operator::Less, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::FloatType, Operator::Less, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::IntType, Operator::LessEqual, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::FloatType, Operator::LessEqual, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::IntType, Operator::Greater, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::FloatType, Operator::Greater, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::IntType, Operator::GreaterEqual, PseudoType::Lhs, PseudoType::Boolean },
+    { TypeKind::FloatType, Operator::GreaterEqual, PseudoType::Lhs, PseudoType::Boolean },
     { TypeKind::IntType, Operator::BinaryAnd, PseudoType::Lhs, PseudoType::Lhs },
     { TypeKind::IntType, Operator::BinaryOr, PseudoType::Lhs, PseudoType::Lhs },
     { TypeKind::IntType, Operator::BinaryXor, PseudoType::Lhs, PseudoType::Lhs },
-    { TypeKind::IntType, Operator::ShiftLeft, TypeRegistry::u8, PseudoType::Lhs },
-    { TypeKind::IntType, Operator::ShiftRight, TypeRegistry::u8, PseudoType::Lhs },
-    { TypeRegistry::boolean, Operator::LogicalAnd, TypeRegistry::boolean, TypeRegistry::boolean },
-    { TypeRegistry::boolean, Operator::LogicalOr, TypeRegistry::boolean, TypeRegistry::boolean },
+    { TypeKind::IntType, Operator::ShiftLeft, PseudoType::Byte, PseudoType::Lhs },
+    { TypeKind::IntType, Operator::ShiftRight, PseudoType::Byte, PseudoType::Lhs },
+    { PseudoType::Boolean, Operator::LogicalAnd, PseudoType::Boolean, PseudoType::Boolean },
+    { PseudoType::Boolean, Operator::LogicalOr, PseudoType::Boolean, PseudoType::Boolean },
+    { TypeKind::OptionalType, Operator::LogicalOr, PseudoType::Refer, PseudoType::Refer },
 };
 
 std::vector<UnaryOperator> unary_ops = {
@@ -73,11 +72,6 @@ std::map<Operator, Operator> assign_ops = {
     { Operator::AssignXor, Operator::BinaryXor },
 };
 
-Operand::Operand(pType t)
-    : type(std::move(t))
-{
-}
-
 Operand::Operand(TypeKind k)
     : type(k)
 {
@@ -90,65 +84,74 @@ Operand::Operand(PseudoType pseudo_type)
 
 bool Operand::matches(pType const &concrete, pType const &hint) const
 {
-    static bool first = true;
-    if (first) {
-        first = false;
-        for (auto const &[ix, result] : std::ranges::views::enumerate(
-                 std::vector<OpResult> {
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     PseudoType::Lhs,
-                     TypeRegistry::boolean,
-                     TypeRegistry::boolean,
-                 })) {
-            binary_ops[ix].result = result;
-        }
-    }
-
     auto concrete_value_type = concrete->value_type();
+    auto hint_value_type = (hint != nullptr) ? hint->value_type() : nullptr;
     return std::visit(
         overloads {
-            [&concrete_value_type](pType const &t) -> bool {
-                return concrete_value_type == t;
-            },
             [&concrete_value_type](TypeKind k) -> bool {
                 return concrete_value_type->is_a(k);
             },
-            [&hint, &concrete_value_type](PseudoType pseudo_type) -> bool {
-                assert(hint != nullptr);
-                return hint == concrete_value_type;
+            [&hint_value_type, &concrete_value_type](PseudoType pseudo_type) -> bool {
+                switch (pseudo_type) {
+                case PseudoType::Boolean:
+                    return concrete_value_type == TypeRegistry::boolean;
+                case PseudoType::Byte:
+                    return concrete_value_type == TypeRegistry::u8;
+                case PseudoType::Long:
+                    return concrete_value_type == TypeRegistry::i64;
+                case PseudoType::String:
+                    return concrete_value_type == TypeRegistry::string;
+                case PseudoType::Refer:
+                    assert(is<OptionalType>(hint_value_type));
+                    return concrete_value_type == get<OptionalType>(hint_value_type).type;
+                case PseudoType::Lhs:
+                case PseudoType::Rhs:
+                    return hint_value_type == concrete_value_type;
+                default:
+                    UNREACHABLE();
+                }
             },
         },
         type);
 }
 
-[[nodiscard]] bool BinaryOperator::matches(pType const &concrete_lhs, pType const &concrete_rhs) const
+bool BinaryOperator::matches(pType const &concrete_lhs, pType const &concrete_rhs) const
 {
     return lhs.matches(concrete_lhs, concrete_rhs) && rhs.matches(concrete_rhs, concrete_lhs);
 }
+
+pType BinaryOperator::return_type(pType const &lhs_type, pType const &rhs_type) const
+{
+    auto lhs_value_type = lhs_type->value_type();
+    auto rhs_value_type = rhs_type->value_type();
+    return std::visit(
+        overloads {
+            [](TypeKind const &t) -> pType {
+                UNREACHABLE();
+            },
+            [&lhs_value_type, &rhs_value_type](PseudoType pseudo_type) -> pType {
+                switch (pseudo_type) {
+                case PseudoType::Boolean:
+                    return TypeRegistry::boolean;
+                case PseudoType::Byte:
+                    return TypeRegistry::u8;
+                case PseudoType::Long:
+                    return TypeRegistry::i64;
+                case PseudoType::String:
+                    return TypeRegistry::string;
+                case PseudoType::Refer:
+                    assert(is<OptionalType>(lhs_value_type));
+                    return get<OptionalType>(lhs_value_type).type;
+                case PseudoType::Lhs:
+                    return lhs_value_type;
+                case PseudoType::Rhs:
+                    return rhs_value_type;
+                default:
+                    UNREACHABLE();
+                }
+            },
+        },
+        result);
+}
+
 }

@@ -18,5 +18,6 @@
   "17_return_struct",
   "18_return_opt",
   "19_must_opt",
-  "20_enum"
+  "20_enum",
+  "21_opt_or"
 ]

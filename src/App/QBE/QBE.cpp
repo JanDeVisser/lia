@@ -185,6 +185,14 @@ GenResult QBEOperand::dereference(QBEContext &ctx) const
         }
         return ret_op;
     }
+    //    if (is<OptionalType>(ptype)) {
+    //        return QBEOperand {
+    //            node,
+    //            TypeRegistry::the().referencing(get<OptionalType>(ptype).type),
+    //            get_value(),
+    //        }
+    //            .dereference(ctx);
+    //   }
     std::visit(
         overloads {
             [&ctx, &ret_op, this](ILValue::Variable const &variable) {

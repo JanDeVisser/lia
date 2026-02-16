@@ -51,7 +51,9 @@ std::vector<Parser::OperatorDef> Parser::operators {
     { Operator::Length, '#', 9, Position::Prefix, Associativity::Right },
     { Operator::Less, '<', 8 },
     { Operator::LessEqual, LiaKeyword::LessEqual, 8 },
+    { Operator::LogicalAnd, LiaKeyword::LogicalAnd, 5 },
     { Operator::LogicalInvert, '!', 14, Position::Prefix, Associativity::Right },
+    { Operator::LogicalOr, LiaKeyword::LogicalOr, 4 },
     { Operator::MemberAccess, '.', 15 },
     { Operator::Modulo, '%', 12 },
     { Operator::Multiply, '*', 12 },
@@ -521,7 +523,7 @@ bool Parser::check_op()
     if (!token.matches(TokenKind::Symbol) && !token.matches(TokenKind::Keyword)) {
         return false;
     }
-    return std::any_of(
+    auto ret = std::any_of(
         operators.begin(),
         operators.end(),
         [&token](auto const &def) -> bool {
@@ -531,6 +533,7 @@ bool Parser::check_op()
                     [&token](LiaKeyword sym) { return token.matches_keyword(sym); } },
                 def.sym);
         });
+    return ret;
 }
 
 std::optional<Parser::OperatorDef> Parser::check_binop()

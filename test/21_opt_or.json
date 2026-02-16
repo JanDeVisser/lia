@@ -1,0 +1,12 @@
+{
+  "name": "21_opt_or",
+  "comptime_stdout": [],
+  "comptime_stderr": [],
+  "stdout": [
+    "69",
+    "420"
+  ],
+  "stderr": [],
+  "exit": 0,
+  "args": []
+}

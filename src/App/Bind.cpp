@@ -305,22 +305,7 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
     auto check_operators = [](Operator op, pType op_lhs_type, pType op_rhs_type) -> pType {
         for (auto const &o : binary_ops) {
             if (op == o.op && o.matches(op_lhs_type, op_rhs_type)) {
-                return std::visit(
-                    overloads {
-                        [](pType const &result_type) -> pType {
-                            return result_type;
-                        },
-                        [&op_lhs_type, &op_rhs_type](PseudoType const &pseudo_type) -> pType {
-                            switch (pseudo_type) {
-                            case PseudoType::Lhs:
-                                return op_lhs_type;
-                            case PseudoType::Rhs:
-                                return op_rhs_type;
-                            default:
-                                UNREACHABLE();
-                            }
-                        } },
-                    o.result);
+                return o.return_type(op_lhs_type, op_rhs_type);
             }
         }
         return nullptr;
@@ -949,8 +934,8 @@ BindResult bind(ASTNode n, UnaryExpression &impl)
         if (impl.op == oper && operand.matches(operand_type)) {
             return std::visit(
                 overloads {
-                    [](pType const &result_type) -> pType {
-                        return result_type;
+                    [](TypeKind const &result_type) -> pType {
+                        UNREACHABLE();
                     },
                     [&operand_type](PseudoType const &pseudo_type) -> pType {
                         switch (pseudo_type) {
@@ -958,8 +943,12 @@ BindResult bind(ASTNode n, UnaryExpression &impl)
                             return operand_type;
                         case PseudoType::Boolean:
                             return TypeRegistry::boolean;
+                        case PseudoType::Byte:
+                            return TypeRegistry::u8;
                         case PseudoType::Long:
                             return TypeRegistry::i64;
+                        case PseudoType::String:
+                            return TypeRegistry::string;
                         case PseudoType::Refer:
                             return std::visit(
                                 overloads {

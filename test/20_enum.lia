@@ -1,0 +1,17 @@
+enum X: u64 {
+    A = 69,
+    B = 420,
+}
+
+struct Y {
+    foo: X,
+    bar: i64,
+}
+
+public func main() i32 {
+    y: Y = { X.A, 42 }
+    putint(y.foo::u64)
+    endln()
+    return 0::i32
+}
+

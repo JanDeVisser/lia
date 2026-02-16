@@ -1,0 +1,11 @@
+{
+  "name": "20_enum",
+  "comptime_stdout": [],
+  "comptime_stderr": [],
+  "stdout": [
+    "69"
+  ],
+  "stderr": [],
+  "exit": 0,
+  "args": []
+}

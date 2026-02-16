@@ -781,6 +781,7 @@ struct QBEOperand {
     }
 
     GenResult      get_value(QBEContext &ctx);
+    GenResult      dereference(QBEContext &ctx) const;
     ILValue const &get_value() const
     {
         assert(value.has_value());
@@ -809,21 +810,20 @@ struct QBEUnaryExpr {
     QBEOperand operand;
 };
 
-#define TRY_DEREFERENCE(op, ctx)                             \
-    (                                                        \
-        {                                                    \
-            QBEOperand __op;                                 \
-            if (auto __res = dereference(op, ctx); !__res) { \
-                return std::unexpected(__res.error());       \
-            } else {                                         \
-                __op = (__res.value());                      \
-            }                                                \
-            (__op);                                          \
+#define TRY_DEREFERENCE(op, ctx)                            \
+    (                                                       \
+        {                                                   \
+            QBEOperand __op;                                \
+            if (auto __res = op.dereference(ctx); !__res) { \
+                return std::unexpected(__res.error());      \
+            } else {                                        \
+                __op = (__res.value());                     \
+            }                                               \
+            (__op);                                         \
         })
 
 using GenResult = QBEOperand::GenResult;
 
-GenResult                              dereference(QBEOperand const &operand, QBEContext &ctx);
 GenResult                              qbe_operator(QBEBinExpr const &expr, QBEContext &ctx);
 GenResult                              qbe_operator(QBEUnaryExpr const &expr, QBEContext &ctx);
 std::expected<ILProgram, std::wstring> generate_qbe(ASTNode const &node);

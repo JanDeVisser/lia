@@ -13,6 +13,7 @@ set(CMAKE_C_STANDARD 23)
 set(CMAKE_CXX_STANDARD 26)
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -g")
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-all-candidates")
 
 if (APPLE)
     set(IS_APPLE TRUE)

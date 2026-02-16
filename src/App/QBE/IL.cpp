@@ -46,6 +46,9 @@ bool qbe_first_class_type(pType const &type)
             [](BoolType const &) -> bool {
                 return true;
             },
+            [](EnumType const &e) -> bool {
+                return qbe_first_class_type(e.underlying_type);
+            },
             [](ZeroTerminatedArray const &) -> bool {
                 return true;
             },

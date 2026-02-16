@@ -28,8 +28,8 @@ namespace Lia::QBE {
 
 static GenResult binexpr(QBEBinExpr const &expr, ILOperation op, ILType type, QBEContext &ctx)
 {
-    auto    lhs_value = dereference(expr.lhs, ctx).value();
-    auto    rhs_value = dereference(expr.rhs, ctx).value();
+    auto    lhs_value = expr.lhs.dereference(ctx).value();
+    auto    rhs_value = expr.rhs.dereference(ctx).value();
     int     var = ++ctx.next_var;
     ILValue ret = ILValue::local(var, type);
     ctx.add_operation(

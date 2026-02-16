@@ -157,6 +157,62 @@ GenResult generate_qbe_nodes(ASTNodes const &, QBEContext &);
             (__op);                                         \
         })
 
+GenResult QBEOperand::get_value(QBEContext &ctx)
+{
+    if (!value) {
+        if (auto res = generate_qbe_node(node, ctx); !res) {
+            return res;
+        } else {
+            *this = res.value();
+        }
+    }
+    return *this;
+}
+
+GenResult QBEOperand::dereference(QBEContext &ctx) const
+{
+    auto ret_op { *this };
+    if (is<ReferenceType>(ptype)) {
+        assert(value.has_value());
+        ret_op.ptype = get<ReferenceType>(ptype).referencing;
+        if (qbe_first_class_type(ret_op.ptype)) {
+            ret_op.set_value(ILValue::local(++ctx.next_var, ctx.qbe_type(ret_op.ptype)));
+            ctx.add_operation(
+                LoadDef {
+                    .pointer = get_value(),
+                    .target = ret_op.get_value(),
+                });
+        }
+        return ret_op;
+    }
+    std::visit(
+        overloads {
+            [&ctx, &ret_op, this](ILValue::Variable const &variable) {
+                if (qbe_first_class_type(ret_op.ptype)) {
+                    ret_op.set_value(ILValue::local(++ctx.next_var, ctx.qbe_type(ret_op.ptype)));
+                    ctx.add_operation(
+                        LoadDef {
+                            .pointer = get_value(),
+                            .target = ret_op.get_value(),
+                        });
+                }
+            },
+            [&ctx, &ret_op, this](ILValue::Parameter const &param) {
+                if (qbe_first_class_type(ret_op.ptype)) {
+                    ret_op.set_value(ILValue::local(++ctx.next_var, ctx.qbe_type(ret_op.ptype)));
+                    ctx.add_operation(
+                        LoadDef {
+                            .pointer = get_value(),
+                            .target = ret_op.get_value(),
+                        });
+                }
+            },
+            [&ret_op](auto const &) {
+            } },
+        get_value().inner);
+    return ret_op;
+}
+
 GenResult generate_qbe_nodes(ASTNodes const &nodes, QBEContext &ctx)
 {
     QBEOperand operand;
@@ -189,72 +245,6 @@ GenResult generate_qbe_nodes(ASTNodes const &nodes, QBEContext &ctx)
             }                                             \
             (__op);                                       \
         })
-
-GenResult dereference(QBEOperand const &operand, QBEContext &ctx)
-{
-    QBEOperand ret_op { operand };
-    auto       value = TRY_GETVALUE(ret_op, ctx).get_value();
-    if (is<ReferenceType>(operand.ptype)) {
-        ret_op.ptype = get<ReferenceType>(operand.ptype).referencing;
-    }
-    return std::visit(
-        overloads {
-            [&ctx, &value, &ret_op, &operand](ILValue::Local local) -> QBEOperand {
-                if (is<ReferenceType>(operand.ptype) && qbe_first_class_type(ret_op.ptype)) {
-                    ret_op.set_value(ILValue::local(++ctx.next_var, ctx.qbe_type(ret_op.ptype)));
-                    ctx.add_operation(
-                        LoadDef {
-                            .pointer = value,
-                            .target = ret_op.get_value(),
-                        });
-                }
-                return ret_op;
-            },
-            [&value, &ctx, &ret_op](ILValue::Variable variable) -> QBEOperand {
-                if (!is<ReferenceType>(ret_op.ptype) && qbe_first_class_type(ret_op.ptype)) {
-                    ret_op.set_value(ILValue::local(++ctx.next_var, ctx.qbe_type(ret_op.ptype)));
-                    ctx.add_operation(
-                        LoadDef {
-                            .pointer = value,
-                            .target = ret_op.get_value(),
-                        });
-                    return ret_op;
-                }
-                if (is<ReferenceType>(ret_op.ptype)) {
-                    ret_op.set_value(ILValue::pointer(++ctx.next_var));
-                    ctx.add_operation(
-                        LoadDef {
-                            .pointer = value,
-                            .target = ret_op.get_value(),
-                        });
-                }
-                return ret_op;
-            },
-            [&value, &ctx, &ret_op](ILValue::Parameter param) -> QBEOperand {
-                if (is<ReferenceType>(ret_op.ptype) && qbe_first_class_type(ret_op.ptype)) {
-                    ret_op.set_value(ILValue::local(++ctx.next_var, ctx.qbe_type(ret_op.ptype)));
-                    ctx.add_operation(
-                        LoadDef {
-                            .pointer = value,
-                            .target = ret_op.get_value(),
-                        });
-                    return ret_op;
-                }
-                if (qbe_first_class_type(ret_op.ptype)) {
-                    ret_op.set_value(ILValue::local(++ctx.next_var, ctx.qbe_type(ret_op.ptype)));
-                    ctx.add_operation(
-                        LoadDef {
-                            .pointer = value,
-                            .target = ret_op.get_value(),
-                        });
-                }
-                return ret_op;
-            },
-            [&ret_op](auto) -> QBEOperand {
-                return ret_op;
-            } },
-        value.inner);
-}
 
 static void raw_assign(ILValue const &lhs, ILValue const &rhs, pType const &type, QBEContext &ctx);
 
@@ -343,7 +333,7 @@ static void raw_assign(ILValue const &lhs, ILValue const &rhs, pType const &type
 
 GenResult assign(QBEOperand const &lhs, ASTNode const &rhs, QBEContext &ctx)
 {
-    QBEOperand rhs_value { rhs, rhs->bound_type };
+    auto rhs_value = TRY_GENERATE(rhs, ctx);
     rhs_value = TRY_DEREFERENCE(rhs_value, ctx);
     std::visit(
         overloads {
@@ -455,22 +445,39 @@ GenResult generate_qbe_node(ASTNode const &, Node const &, QBEContext &ctx)
     NYI("Unimplemented QBE serialization for {}", typeid(Node).name());
 }
 
-GenResult QBEOperand::get_value(QBEContext &ctx)
-{
-    if (!value) {
-        if (auto res = generate_qbe_node(node, ctx); !res) {
-            return res;
-        } else {
-            *this = res.value();
-        }
-    }
-    return *this;
-}
-
 using GenBinExpr = std::expected<QBEBinExpr, std::wstring>;
 
-static GenBinExpr make_dereferenced_binexpr(ASTNode const &n, QBEOperand lhs, Operator op, QBEOperand rhs, QBEContext &ctx)
+static GenBinExpr make_binexpr(ASTNode const &n, QBEOperand lhs, Operator op, QBEOperand rhs, QBEContext &ctx)
 {
+    pType const &lhs_type = lhs.ptype;
+    pType const &rhs_type = rhs.ptype;
+    if (is<ReferenceType>(lhs_type) || is<ReferenceType>(rhs_type)) {
+        return std::visit(
+            overloads {
+                [&n, &lhs, &op, &rhs, &ctx](ReferenceType const &, auto const &) -> GenBinExpr {
+                    lhs = TRY_ENSURE_GENERATED(lhs, ctx);
+                    lhs = TRY_DEREFERENCE(lhs, ctx);
+                    return make_binexpr(n, lhs, op, rhs, ctx);
+                },
+                [&n, &lhs, &op, &rhs, &ctx](auto const &, ReferenceType const &) -> GenBinExpr {
+                    rhs = TRY_ENSURE_GENERATED(rhs, ctx);
+                    rhs = TRY_DEREFERENCE(rhs, ctx);
+                    return make_binexpr(n, lhs, op, rhs, ctx);
+                },
+                [&n, &lhs, &op, &rhs, &ctx](ReferenceType const &, ReferenceType const &) -> GenBinExpr {
+                    lhs = TRY_ENSURE_GENERATED(lhs, ctx);
+                    lhs = TRY_DEREFERENCE(lhs, ctx);
+                    rhs = TRY_ENSURE_GENERATED(rhs, ctx);
+                    rhs = TRY_DEREFERENCE(rhs, ctx);
+                    return make_binexpr(n, lhs, op, rhs, ctx);
+                },
+                [](auto const &, auto const &) -> GenBinExpr {
+                    UNREACHABLE();
+                }
+
+            },
+            lhs_type->description, rhs_type->description);
+    }
     return std::visit(
         overloads {
             [&n, &lhs, &op, &rhs, &ctx](StructType const &strukt, auto const &) -> GenBinExpr {
@@ -507,30 +514,7 @@ static GenBinExpr make_dereferenced_binexpr(ASTNode const &n, QBEOperand lhs, Op
             [&n, &lhs, &op, &rhs, &ctx](auto const &, auto const &) -> GenBinExpr {
                 return QBEBinExpr { n, TRY_ENSURE_GENERATED(lhs, ctx), op, TRY_ENSURE_GENERATED(rhs, ctx) };
             } },
-        lhs.ptype->description, rhs.ptype->description);
-}
-
-static GenBinExpr make_binexpr(ASTNode const &n, QBEOperand lhs, Operator op, QBEOperand rhs, QBEContext &ctx)
-{
-    return std::visit(
-        overloads {
-            [&n, &lhs, &op, &rhs, &ctx](ReferenceType const &, auto const &) -> GenBinExpr {
-                lhs = TRY_DEREFERENCE(lhs, ctx);
-                return make_dereferenced_binexpr(n, lhs, op, rhs, ctx);
-            },
-            [&n, &lhs, &op, &rhs, &ctx](auto const &, ReferenceType const &) -> GenBinExpr {
-                rhs = TRY_DEREFERENCE(rhs, ctx);
-                return make_dereferenced_binexpr(n, lhs, op, rhs, ctx);
-            },
-            [&n, &lhs, &op, &rhs, &ctx](ReferenceType const &, ReferenceType const &) -> GenBinExpr {
-                lhs = TRY_DEREFERENCE(lhs, ctx);
-                rhs = TRY_DEREFERENCE(rhs, ctx);
-                return make_dereferenced_binexpr(n, lhs, op, rhs, ctx);
-            },
-            [&n, &lhs, &op, &rhs, &ctx](auto const &, auto const &) -> GenBinExpr {
-                return make_dereferenced_binexpr(n, lhs, op, rhs, ctx);
-            } },
-        lhs.ptype->description, rhs.ptype->description);
+        lhs_type->description, rhs_type->description);
 }
 
 template<>
@@ -539,7 +523,7 @@ GenResult generate_qbe_node(ASTNode const &n, BinaryExpression const &impl, QBEC
     auto const &rhs_type { impl.rhs->bound_type };
     auto        rhs_value_type { rhs_type->value_type() };
 
-    info(L"Generating BinExpr {} {} {}", impl.lhs->bound_type->to_string(), as_wstring(Operator_name(impl.op)), impl.rhs->bound_type->to_string());
+    trace(L"Generating BinExpr {} {} {}", impl.lhs->bound_type->to_string(), as_wstring(Operator_name(impl.op)), impl.rhs->bound_type->to_string());
     if (impl.op == Operator::Assign) {
         return assign(TRY_GENERATE(impl.lhs, ctx), impl.rhs, ctx);
     }
@@ -549,6 +533,7 @@ GenResult generate_qbe_node(ASTNode const &n, BinaryExpression const &impl, QBEC
     if (!res) {
         return std::unexpected(res.error());
     }
+    trace(L"binexpr {} {} {}", res.value().lhs.get_value(), as_wstring(Operator_name(res.value().op)), res.value().rhs.get_value());
     return qbe_operator(res.value(), ctx);
 }
 
@@ -832,7 +817,7 @@ GenResult generate_qbe_node(ASTNode const &n, FunctionDefinition const &impl, QB
 template<>
 GenResult generate_qbe_node(ASTNode const &n, FunctionDeclaration const &impl, QBEContext &ctx)
 {
-    info(L"Generating function `{}` -> {}", impl.name, get<TypeType>(impl.return_type->bound_type).type->to_string());
+    trace(L"Generating function `{}` -> {}", impl.name, get<TypeType>(impl.return_type->bound_type).type->to_string());
     auto &file { ctx.program.files[ctx.current_file] };
     auto &function = file.functions.emplace_back(
         ctx.current_file,
@@ -1103,12 +1088,12 @@ GenResult generate_qbe_node(ASTNode const &n, QBEContext &ctx)
 std::expected<ILProgram, std::wstring> generate_qbe(ASTNode const &node)
 {
     QBEContext ctx {};
-    info("Generating QBE IL");
+    info("[QBE] Generating IL");
     if (auto res = generate_qbe_node(node, ctx); res.has_value()) {
-        info("QBE IL generated");
+        info("[QBE] IL generated");
         return ctx.program;
     } else {
-        log_error(L"Error generating QBE IL: {}", res.error());
+        log_error(L"[QBE] Error generating IL: {}", res.error());
         return std::unexpected(res.error());
     }
 }

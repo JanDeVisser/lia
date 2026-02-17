@@ -94,6 +94,8 @@ ASTNode normalize(ASTNode n, BinaryExpression const &impl)
         }
         return make_node<BinaryExpression>(n, aggregate, impl.op, member);
     } break;
+    case Operator::Range:
+        return make_node<BinaryExpression>(n, normalize(impl.lhs), impl.op, normalize(impl.rhs));
     default:
         if (assign_ops.contains(impl.op)) {
             auto const bin_expr = make_node<BinaryExpression>(
@@ -208,10 +210,8 @@ ASTNode normalize(ASTNode n, ForStatement const &impl)
 {
     n->init_namespace();
     auto range_expr = normalize(impl.range_expr);
-    n->ns->register_variable(impl.range_variable, range_expr);
-    auto ret = make_node<ForStatement>(n, impl.range_variable, range_expr, normalize(impl.statement));
-    ret->ns->register_variable(impl.range_variable, range_expr);
-    return n;
+    n->ns->register_variable(impl.range_variable, get<BinaryExpression>(range_expr).lhs);
+    return make_node<ForStatement>(n, impl.range_variable, range_expr, normalize(impl.statement));
 }
 
 template<>
@@ -505,7 +505,7 @@ ASTNode normalize(ASTNode node)
     if (node == nullptr) {
         return nullptr;
     }
-    trace(L"[->N] {}", node);
+    trace(L"[->N] {:t}", node);
     ASTNode ret = node;
     if (node->status < ASTStatus::Normalized) {
         if (node->ns.has_value()) {
@@ -523,7 +523,7 @@ ASTNode normalize(ASTNode node)
             ret->status = ASTStatus::Normalized;
         }
     }
-    trace(L"[N->] {}", ret);
+    trace(L"[N->] {:t}", ret);
     return ret;
 }
 

@@ -238,6 +238,13 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
         return lhs_type;
     }
 
+    if (impl.op == Operator::Range) {
+        if (lhs_value_type == rhs_value_type
+            && (is<IntType>(lhs_value_type) || is<EnumType>(lhs_value_type))) {
+            return TypeRegistry::the().range_of(lhs_value_type);
+        }
+    }
+
     if (impl.op == Operator::Call && is<FunctionType>(lhs_value_type) && is<TypeList>(rhs_value_type)) {
         fatal("The `Call` binary operator should be elided during the normalization phase");
     }

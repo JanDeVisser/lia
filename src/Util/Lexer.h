@@ -586,7 +586,11 @@ struct LexerTypes {
             for (; ix < buffer.length(); ++ix) {
                 Char const ch = buffer[ix];
                 if (!predicate(ch) && ((ch != '.') || (type == NumberType::Decimal))) {
-                    // FIXME lex '1..10' as '1', '..', '10'. It will now lex as '1.', '.', '10'
+                    // Special handling of `0..10`
+                    if (ch == '.' && buffer[ix - 1] == '.') {
+                        type = NumberType::Integer;
+                        --ix;
+                    }
                     break;
                 }
                 if (ch == '.') {

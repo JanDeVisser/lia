@@ -447,6 +447,24 @@ GenResult cast(QBEOperand value, pType const &target_type, QBEContext &ctx)
         value.ptype->description, target_type->description);
 }
 
+GenResult variable_decl(ASTNode const &n, std::wstring const &name, pType const &type, ASTNode const &init, QBEContext &ctx)
+{
+    size_t      size = type->size_of();
+    auto const &binding = ctx.add(name, type);
+    auto        var_ref = ILValue::variable(binding.depth, binding.index, ILBaseType::L);
+    ctx.add_operation(
+        AllocDef {
+            (size < 8) ? 4u : 8u,
+            size,
+            var_ref,
+        });
+    QBEOperand operand { n, var_ref };
+    if (init != nullptr) {
+        return assign(operand, init, ctx);
+    }
+    return operand;
+}
+
 template<class Node>
 GenResult generate_qbe_node(ASTNode const &, Node const &, QBEContext &ctx)
 {
@@ -804,6 +822,67 @@ GenResult generate_qbe_node(ASTNode const &n, ExpressionList const &impl, QBECon
 }
 
 template<>
+GenResult generate_qbe_node(ASTNode const &n, ForStatement const &impl, QBEContext &ctx)
+{
+    auto        top_loop = ++ctx.next_label;
+    auto        cont_loop = ++ctx.next_label;
+    auto        end_loop = ++ctx.next_label;
+    auto const &range = get<BinaryExpression>(impl.range_expr);
+    auto const &range_start = range.lhs;
+    auto const &range_end = TRY_GENERATE(range.rhs, ctx);
+    if (auto res = variable_decl(n, impl.range_variable, range_start->bound_type, range_start, ctx); !res.has_value()) {
+        return std::unexpected(res.error());
+    } else {
+        auto const &range_var = res.value();
+        ctx.add_operation(LabelDef { top_loop });
+        auto range_var_value_pre = ILValue::local(++ctx.next_var, qbe_type(range_start->bound_type));
+        ctx.add_operation(
+            LoadDef {
+                range_var.get_value(),
+                range_var_value_pre,
+            });
+        auto range_ended = ILValue::local(++ctx.next_var, ILBaseType::W);
+        ctx.add_operation(
+            ExprDef {
+                range_var_value_pre,
+                range_end.get_value(),
+                ILOperation::Less,
+                range_ended,
+            });
+        ctx.add_operation(
+            JnzDef {
+                range_ended,
+                cont_loop,
+                end_loop,
+            });
+        ctx.add_operation(LabelDef { cont_loop });
+        TRY_GENERATE(impl.statement, ctx);
+        auto range_var_value_post = ILValue::local(++ctx.next_var, qbe_type(range_start->bound_type));
+        ctx.add_operation(
+            LoadDef {
+                range_var.get_value(),
+                range_var_value_post,
+            });
+        auto range_var_value_inc = ILValue::local(++ctx.next_var, qbe_type(range_start->bound_type));
+        ctx.add_operation(
+            ExprDef {
+                range_var_value_post,
+                ILValue::integer(1, range_var.get_value().type),
+                ILOperation::Add,
+                range_var_value_inc,
+            });
+        ctx.add_operation(
+            StoreDef {
+                range_var_value_inc,
+                range_var.get_value(),
+            });
+        ctx.add_operation(JmpDef { top_loop });
+        ctx.add_operation(LabelDef { end_loop });
+        return QBEOperand { n, ILValue::null() };
+    }
+}
+
+template<>
 GenResult generate_qbe_node(ASTNode const &n, FunctionDefinition const &impl, QBEContext &ctx)
 {
     if (ctx.program.name.empty()) {
@@ -1027,20 +1106,7 @@ GenResult generate_qbe_node(ASTNode const &n, Struct const &impl, QBEContext &ct
 template<>
 GenResult generate_qbe_node(ASTNode const &n, VariableDeclaration const &impl, QBEContext &ctx)
 {
-    size_t      size = n->bound_type->size_of();
-    auto const &binding = ctx.add(impl.name, n->bound_type);
-    auto        var_ref = ILValue::variable(binding.depth, binding.index, ILBaseType::L);
-    ctx.add_operation(
-        AllocDef {
-            (size < 8) ? 4u : 8u,
-            size,
-            var_ref,
-        });
-    QBEOperand operand { n, var_ref };
-    if (impl.initializer != nullptr) {
-        return assign(operand, impl.initializer, ctx);
-    }
-    return operand;
+    return variable_decl(n, impl.name, n->bound_type, impl.initializer, ctx);
 }
 
 template<>

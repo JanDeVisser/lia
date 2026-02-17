@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "Util/Ptr.h"
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <ranges>
 #include <string_view>
 
 #include <Util/Defer.h>
@@ -1372,6 +1372,18 @@ void Parser::unregister_function(std::wstring name, ASTNode fnc)
 pType Parser::find_type(std::wstring const &name) const
 {
     assert(!namespaces.empty() && namespaces.back()->ns);
+#ifdef DEBUG_NAMESPACE_STACK
+    std::stringstream ss;
+    ss << "[S*]";
+    for (auto &n : namespaces | std::ranges::views::reverse) {
+        if (n->ns) {
+            ss << " <- " << n.id.value() << ' ' << SyntaxNodeType_name(n->type()) << ' ' << reinterpret_cast<intptr_t>(&*(n->ns));
+        } else {
+            ss << " <- " << n.id.value() << ' ' << SyntaxNodeType_name(n->type()) << " *********";
+        }
+    }
+    info("{}", ss.str());
+#endif
     return namespaces.back()->ns->find_type(name);
 }
 
@@ -1399,22 +1411,36 @@ void Parser::push_namespace(ASTNode const &ns)
         ns->ns->parent = namespaces.back();
     }
     namespaces.push_back(ns);
-    // std::wcerr << L"[S+]";
-    // for (auto &n : namespaces | std::ranges::views::reverse) {
-    //     std::wcerr << " <- " << n.id.value();
-    // }
-    // std::wcerr << "\n";
+#ifdef DEBUG_NAMESPACE_STACK
+    std::stringstream ss;
+    ss << "[S+]";
+    for (auto &n : namespaces | std::ranges::views::reverse) {
+        if (n->ns) {
+            ss << " <- " << n.id.value() << ' ' << SyntaxNodeType_name(n->type()) << ' ' << reinterpret_cast<intptr_t>(&*(n->ns));
+        } else {
+            ss << " <- " << n.id.value() << ' ' << SyntaxNodeType_name(n->type()) << " *********";
+        }
+    }
+    info("{}", ss.str());
+#endif
 }
 
 void Parser::pop_namespace()
 {
     assert(!namespaces.empty());
     namespaces.pop_back();
-    // std::wcerr << L"[S-]";
-    // for (auto &n : namespaces | std::ranges::views::reverse) {
-    //     std::wcerr << " <- " << n.id.value();
-    // }
-    // std::wcerr << "\n";
+#ifdef DEBUG_NAMESPACE_STACK
+    std::stringstream ss;
+    ss << "[S-]";
+    for (auto &n : namespaces | std::ranges::views::reverse) {
+        if (n->ns) {
+            ss << " <- " << n.id.value() << ' ' << SyntaxNodeType_name(n->type()) << ' ' << reinterpret_cast<intptr_t>(&*(n->ns));
+        } else {
+            ss << " <- " << n.id.value() << ' ' << SyntaxNodeType_name(n->type()) << " *********";
+        }
+    }
+    info("{}", ss.str());
+#endif
 }
 
 void Parser::append(LexerErrorMessage const &lexer_error)

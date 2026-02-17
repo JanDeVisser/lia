@@ -547,13 +547,14 @@ pType TypeRegistry::slice_of(pType type)
 {
     assert(type);
     for (auto const &t : types) {
-        if (std::visit(overloads {
-                           [&type](SliceType const descr) -> bool {
-                               return descr.slice_of == type;
-                           },
-                           [](auto const &) -> bool {
-                               return false;
-                           } },
+        if (std::visit(
+                overloads {
+                    [&type](SliceType const descr) -> bool {
+                        return descr.slice_of == type;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
                 t.description)) {
             return t.id;
         }
@@ -566,13 +567,14 @@ pType TypeRegistry::zero_terminated_array_of(pType type)
 {
     assert(type);
     for (auto const &t : types) {
-        if (std::visit(overloads {
-                           [&type](ZeroTerminatedArray const &descr) -> bool {
-                               return descr.array_of == type;
-                           },
-                           [](auto const &) -> bool {
-                               return false;
-                           } },
+        if (std::visit(
+                overloads {
+                    [&type](ZeroTerminatedArray const &descr) -> bool {
+                        return descr.array_of == type;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
                 t.description)) {
             return t.id;
         }
@@ -586,13 +588,14 @@ pType TypeRegistry::array_of(pType type, size_t size)
     assert(type);
     assert(size > 0);
     for (auto const &t : types) {
-        if (std::visit(overloads {
-                           [&type, &size](Array const &descr) -> bool {
-                               return descr.array_of == type && descr.size == size;
-                           },
-                           [](auto const &) -> bool {
-                               return false;
-                           } },
+        if (std::visit(
+                overloads {
+                    [&type, &size](Array const &descr) -> bool {
+                        return descr.array_of == type && descr.size == size;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
                 t.description)) {
             return t.id;
         }
@@ -604,13 +607,14 @@ pType TypeRegistry::array_of(pType type, size_t size)
 pType TypeRegistry::dyn_array_of(pType type)
 {
     for (auto const &t : types) {
-        if (std::visit(overloads {
-                           [&type](DynArray const &descr) -> bool {
-                               return descr.array_of == type;
-                           },
-                           [](auto const &) -> bool {
-                               return false;
-                           } },
+        if (std::visit(
+                overloads {
+                    [&type](DynArray const &descr) -> bool {
+                        return descr.array_of == type;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
                 t.description)) {
             return t.id;
         }
@@ -623,18 +627,39 @@ pType TypeRegistry::optional_of(pType type)
 {
     assert(type);
     for (auto const &t : types) {
-        if (std::visit(overloads {
-                           [&type](OptionalType const descr) -> bool {
-                               return descr.type == type;
-                           },
-                           [](auto const &) -> bool {
-                               return false;
-                           } },
+        if (std::visit(
+                overloads {
+                    [&type](OptionalType const descr) -> bool {
+                        return descr.type == type;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
                 t.description)) {
             return t.id;
         }
     }
     auto ret = make_type(std::format(L"?{}", type->name), OptionalType { type });
+    return ret;
+}
+
+pType TypeRegistry::range_of(pType type)
+{
+    assert(type);
+    for (auto const &t : types) {
+        if (std::visit(
+                overloads {
+                    [&type](RangeType const descr) -> bool {
+                        return descr.range_of == type;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
+                t.description)) {
+            return t.id;
+        }
+    }
+    auto ret = make_type(std::format(L"{}..", type->name), RangeType { type });
     return ret;
 }
 

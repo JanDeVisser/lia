@@ -457,6 +457,7 @@ struct TypeRegistry {
     pType       array_of(pType type, size_t size);
     pType       dyn_array_of(pType type);
     pType       optional_of(pType type);
+    pType       range_of(pType type);
     pType       error_of(pType success, pType error);
     pType       function_of(std::vector<pType> const &parameters, pType result);
     pType       typelist_of(std::vector<pType> const &typelist);

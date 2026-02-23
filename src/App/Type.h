@@ -46,7 +46,7 @@ namespace Lia {
     S(EnumType)            \
     S(TaggedUnionType)     \
     S(OptionalType)        \
-    S(ErrorType)           \
+    S(ResultType)          \
     S(StructType)          \
     S(TypeType)
 
@@ -385,13 +385,14 @@ struct OptionalType {
     intptr_t     align_of() const;
 };
 
-struct ErrorType {
+struct ResultType {
     pType success;
     pType error;
 
     std::wstring to_string() const;
     intptr_t     size_of() const;
     intptr_t     align_of() const;
+    intptr_t     flag_offset() const;
 };
 
 struct TypeType {
@@ -458,7 +459,7 @@ struct TypeRegistry {
     pType       dyn_array_of(pType type);
     pType       optional_of(pType type);
     pType       range_of(pType type);
-    pType       error_of(pType success, pType error);
+    pType       result_of(pType success, pType error);
     pType       function_of(std::vector<pType> const &parameters, pType result);
     pType       typelist_of(std::vector<pType> const &typelist);
     pType       struct_of(StructType::Fields const &fields);

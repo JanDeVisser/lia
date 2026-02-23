@@ -78,13 +78,6 @@ ASTNode stamp(ASTNode n, EnumValue &impl)
 }
 
 template<>
-ASTNode stamp(ASTNode n, Error &impl)
-{
-    impl.expression = stamp(impl.expression);
-    return n;
-}
-
-template<>
 ASTNode stamp(ASTNode n, ExpressionList &impl)
 {
     impl.expressions = stamp(impl.expressions);

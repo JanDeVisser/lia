@@ -56,7 +56,8 @@ enum class Associativity {
     S(Sizeof)        \
     S(Subscript)     \
     S(Subtract)      \
-    S(Unwrap)
+    S(Unwrap)        \
+    S(UnwrapError)
 
 #define AssignmentOps(S) \
     S(Assign)            \
@@ -85,6 +86,7 @@ enum class PseudoType {
     Lhs,
     Rhs,
     Refer,
+    Error,
     Boolean,
     Byte,
     Long,

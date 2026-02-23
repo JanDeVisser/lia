@@ -141,7 +141,7 @@ struct Parser {
     ASTNode                            parse_include();
     ASTNode                            parse_loop();
     ASTNode                            parse_public();
-    ASTNode                            parse_return_error();
+    ASTNode                            parse_return();
     ASTNode                            parse_struct();
     ASTNode                            parse_var_decl();
     ASTNode                            parse_while();

@@ -38,9 +38,6 @@ QBEValue Frame::make_from_buffer(ILValue target, QBEValue val)
     void const *buffer = static_cast<void const *>(val);
     return std::visit(
         overloads {
-            [](std::monostate const &) -> QBEValue {
-                return QBEValue {};
-            },
             [this, &buffer](ILBaseType const &bt) -> QBEValue {
                 switch (bt) {
                 case ILBaseType::V:
@@ -69,10 +66,10 @@ QBEValue Frame::make_from_buffer(ILValue target, QBEValue val)
                 }
                 return QBEValue {};
             },
-            [this, &val, &target](ILStructType const &strukt) -> QBEValue {
+            [this, &val, &target](ILType::ILAggregate const &) -> QBEValue {
                 return val;
             } },
-        target.type);
+        target.type.inner);
 }
 
 Value infer_value(VM const &vm, QBEValue const &val)
@@ -88,16 +85,13 @@ bool is_pointer(ILValue const &value)
 {
     return std::visit(
         overloads {
-            [](std::monostate const &) -> bool {
-                return false;
-            },
             [](ILBaseType const &bt) -> bool {
                 return bt == ILBaseType::L;
             },
-            [](ILStructType const &st) -> bool {
+            [](ILType::ILAggregate const &) -> bool {
                 return true;
             } },
-        value.type);
+        value.type.inner);
 }
 
 QBEValue Frame::allocate(size_t bytes, size_t alignment)
@@ -331,17 +325,15 @@ void store(pFrame const &frame, QBEValue target, ILValue const &src_ref)
 
     std::visit(
         overloads {
-            [](std::monostate const &) {
-            },
             [&store_value, &src, &ptr](ILBaseType const &bt) {
                 store_value(src, ptr);
             },
-            [&store_value, &dereference_value, &src, &ptr](ILStructType const &strukt) {
+            [&store_value, &dereference_value, &src, &ptr](ILType::ILAggregate const &aggregate) {
                 auto *src_ptr = static_cast<uint8_t *>(src);
-                memset(ptr, 0, size_of(strukt));
-                memcpy(ptr, src_ptr, size_of(strukt));
+                memset(ptr, 0, aggregate.size_of);
+                memcpy(ptr, src_ptr, aggregate.size_of);
             } },
-        src_ref.type);
+        src_ref.type.inner);
 }
 
 VM::VM(ILProgram const &program)
@@ -460,7 +452,7 @@ ExecResult native_call(ILFunction const &il, pFrame const &frame, CallDef const 
     trace(L"Native call: {}(0x{:016x}) -> {}", instruction.name, reinterpret_cast<intptr_t>(args_ptr), return_type);
     frame->vm.dump_stack();
     if (native_call(as_utf8(instruction.name), args_ptr, types, ret_ptr, return_type)) {
-        if (!std::holds_alternative<std::monostate>(instruction.target.type)) {
+        if (size_of(instruction.target.type) > 0) {
             assign(frame, instruction.target, frame->make_from_buffer(instruction.target, ret));
         }
         frame->release(args);
@@ -522,6 +514,47 @@ ExecResult execute(ILFunction const &il, pFrame const &frame, ExprDef const &ins
     }
     auto v = evaluate(lhs, lia_op, rhs);
     assign(frame, instruction.target, v);
+    ++frame->ip;
+    return instruction.target;
+}
+
+template<>
+ExecResult execute(ILFunction const &il, pFrame const &frame, ExtDef const &instruction)
+{
+    auto src = get(frame, instruction.source);
+    assert(std::holds_alternative<ILBaseType>(instruction.target.type.inner));
+    auto target_type = std::get<ILBaseType>(instruction.target.type.inner);
+
+    QBEValue target;
+    if (is_integer(src.type) && is_integer(target_type)) {
+        assert(size_of(target_type) > size_of(src.type));
+        switch (src.type) {
+        case ILBaseType::B:
+        case ILBaseType::SB:
+            target = QBEValue { target_type, static_cast<intptr_t>(static_cast<int8_t>(src)) };
+            break;
+        case ILBaseType::UB:
+            target = QBEValue { target_type, static_cast<intptr_t>(static_cast<uint8_t>(src)) };
+            break;
+        case ILBaseType::H:
+        case ILBaseType::SH:
+            target = QBEValue { target_type, static_cast<intptr_t>(static_cast<int16_t>(src)) };
+            break;
+        case ILBaseType::UH:
+            target = QBEValue { target_type, static_cast<intptr_t>(static_cast<uint16_t>(src)) };
+            break;
+        case ILBaseType::W:
+        case ILBaseType::SW:
+            target = QBEValue { target_type, static_cast<intptr_t>(static_cast<int32_t>(src)) };
+            break;
+        case ILBaseType::UW:
+            target = QBEValue { target_type, static_cast<intptr_t>(static_cast<uint32_t>(src)) };
+            break;
+        default:
+            UNREACHABLE();
+        }
+    }
+    assign(frame, instruction.target, target);
     ++frame->ip;
     return instruction.target;
 }

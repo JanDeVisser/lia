@@ -72,6 +72,8 @@ GenResult qbe_operator(QBEBinExpr const &expr, BoolType const &lhs, BoolType con
 
 static constexpr wchar_t const *division_by_zero { L"Division by zero" };
 static constexpr wchar_t const *empty_optional { L"Empty optional value" };
+static constexpr wchar_t const *result_error { L"Unwrapping result value containing error" };
+static constexpr wchar_t const *result_success { L"Unwrapping error of result value containing success" };
 
 static void check_division_by_zero(QBEOperand const &rhs, QBEContext &ctx)
 {
@@ -143,6 +145,46 @@ static void check_optional(QBEOperand const &val, OptionalType const &optional, 
         });
 }
 
+static void check_result(bool success, QBEOperand const &val, ResultType const &result, int value_not_ok, int value_ok, QBEContext &ctx)
+{
+    auto zero { ILValue::local(++ctx.next_var, ILBaseType::W) };
+    auto flag_ptr { ILValue::pointer(++ctx.next_var) };
+    auto flag_val { ILValue::local(++ctx.next_var, ILBaseType::W) };
+    auto flag_val_2 { ILValue::local(++ctx.next_var, ILBaseType::W) };
+    ctx.add_operation(
+        ExprDef {
+            val.get_value(),
+            ILValue::integer(result.flag_offset(), ILBaseType::L),
+            ILOperation::Add,
+            flag_ptr,
+        });
+    ctx.add_operation(
+        LoadDef {
+            flag_ptr,
+            flag_val,
+        });
+    ctx.add_operation(
+        ExprDef {
+            ILValue::integer(0x01, ILBaseType::W),
+            flag_val,
+            (success) ? ILOperation::And : ILOperation::Xor,
+            flag_val_2,
+        });
+    ctx.add_operation(
+        ExprDef {
+            ILValue::integer(0, ILBaseType::W),
+            flag_val_2,
+            ILOperation::Equals,
+            zero,
+        });
+    ctx.add_operation(
+        JnzDef {
+            zero,
+            value_not_ok,
+            value_ok,
+        });
+}
+
 static void optional_must(QBEOperand const &val, OptionalType const &optional, QBEContext &ctx)
 {
     int carry_on = ++ctx.next_label;
@@ -160,12 +202,40 @@ static void optional_must(QBEOperand const &val, OptionalType const &optional, Q
     ctx.add_operation(LabelDef { carry_on });
 }
 
+static void result_must(bool success, QBEOperand const &val, ResultType const &result, QBEContext &ctx)
+{
+    int carry_on = ++ctx.next_label;
+    int abort_mission = ++ctx.next_label;
+    check_result(success, val, result, abort_mission, carry_on, ctx);
+    ctx.add_operation(LabelDef { abort_mission });
+    ILValue empty_optional_id = ctx.add_string((success) ? result_error : result_success);
+    CallDef call_def = {
+        L"libliart:lia$abort",
+        ILValue::null(),
+    };
+    call_def.args.push_back(empty_optional_id);
+    call_def.args.push_back(ILValue::integer(wcslen(empty_optional), ILBaseType::L));
+    ctx.add_operation(call_def);
+    ctx.add_operation(LabelDef { carry_on });
+}
+
 static GenResult unwrap_optional(ASTNode const &unwrapped, QBEOperand const &optional, QBEContext &ctx)
 {
     auto reference = QBEOperand {
         unwrapped,
         TypeRegistry::the().referencing(get<OptionalType>(optional.ptype).type),
         optional.get_value(),
+    };
+    return TRY_DEREFERENCE(reference, ctx);
+}
+
+static GenResult unwrap_result(bool success, ASTNode const &unwrapped, QBEOperand const &result, QBEContext &ctx)
+{
+    auto result_type = get<ResultType>(result.ptype);
+    auto reference = QBEOperand {
+        unwrapped,
+        TypeRegistry::the().referencing((success) ? result_type.success : result_type.error),
+        result.get_value(),
     };
     return TRY_DEREFERENCE(reference, ctx);
 }
@@ -346,6 +416,43 @@ GenResult qbe_operator(QBEBinExpr const &expr, OptionalType const &lhs, auto con
     NYI("QBE mapping for optional operator `{}`", Operator_name(expr.op));
 }
 
+GenResult qbe_operator(QBEBinExpr const &expr, ResultType const &lhs, auto const &rhs, QBEContext &ctx)
+{
+    if (expr.op == Operator::LogicalOr) {
+        assert(expr.rhs.ptype->compatible(lhs.success) || expr.rhs.ptype->assignable_to(lhs.success));
+        int  use_value = ++ctx.next_label;
+        int  use_alternative = ++ctx.next_label;
+        int  done = ++ctx.next_label;
+        auto ret = ILValue::local(++ctx.next_var, qbe_type(lhs.success));
+        auto deref = TRY_DEREFERENCE(expr.lhs, ctx);
+        check_result(true, deref, lhs, use_alternative, use_value, ctx);
+        ctx.add_operation(LabelDef { use_alternative });
+        auto alternative = TRY_DEREFERENCE(expr.rhs, ctx);
+        ctx.add_operation(
+            CopyDef {
+                alternative.get_value(),
+                ret,
+            });
+        ctx.add_operation(
+            JmpDef {
+                done,
+            });
+        ctx.add_operation(LabelDef { use_value });
+        auto val = unwrap_result(true, expr.node, deref, ctx);
+        if (!val) {
+            return std::unexpected(val.error());
+        }
+        ctx.add_operation(
+            CopyDef {
+                val.value().get_value(),
+                ret,
+            });
+        ctx.add_operation(LabelDef { done });
+        return QBEOperand { expr.node, lhs.success, ret };
+    }
+    NYI("QBE mapping for result operator `{}`", Operator_name(expr.op));
+}
+
 GenResult qbe_operator(QBEBinExpr const &expr, TypeType const &lhs, auto const &rhs, QBEContext &ctx)
 {
     if (expr.op == Operator::MemberAccess) {
@@ -392,9 +499,15 @@ GenResult qbe_operator(QBEBinExpr const &expr, QBEContext &ctx)
 {
     auto const &lhs_value_type = expr.lhs.node->bound_type->value_type();
     auto const &rhs_value_type = expr.rhs.node->bound_type->value_type();
+    QBEBinExpr  expr_materialized {
+        expr.node,
+        TRY_MATERIALIZE(expr.lhs, ctx),
+        expr.op,
+        TRY_MATERIALIZE(expr.rhs, ctx),
+    };
     return std::visit(
-        [&expr, &ctx](auto const &lhs_descr, auto const &rhs_descr) {
-            return qbe_operator(expr, lhs_descr, rhs_descr, ctx);
+        [&expr_materialized, &ctx](auto const &lhs_descr, auto const &rhs_descr) {
+            return qbe_operator(expr_materialized, lhs_descr, rhs_descr, ctx);
         },
         lhs_value_type->description, rhs_value_type->description);
 }
@@ -498,6 +611,63 @@ GenResult qbe_operator(QBEUnaryExpr const &expr, FloatType const &float_type, QB
 }
 
 template<>
+GenResult qbe_operator(QBEUnaryExpr const &expr, ResultType const &result, QBEContext &ctx)
+{
+    auto operand = TRY_DEREFERENCE(expr.operand, ctx);
+    auto var = ILValue::local(++ctx.next_var, operand.get_value().type);
+    switch (expr.op) {
+    case Operator::Unwrap: {
+        result_must(true, operand, result, ctx);
+        return unwrap_result(true, expr.node, operand, ctx);
+    } break;
+    case Operator::UnwrapError: {
+        result_must(false, operand, result, ctx);
+        return unwrap_result(false, expr.node, operand, ctx);
+    } break;
+    case Operator::LogicalInvert: {
+        auto flag_ptr = ILValue::pointer(++ctx.next_var);
+        ctx.add_operation(
+            ExprDef {
+                operand.get_value(),
+                ILValue::integer(
+                    alignat(
+                        std::max(result.success->size_of(), result.error->size_of()),
+                        std::max(result.success->align_of(), result.error->align_of())),
+                    ILBaseType::L),
+                ILOperation::Add,
+                flag_ptr,
+            });
+        auto flag_value = ILValue::local(++ctx.next_var, ILBaseType::W);
+        ctx.add_operation(
+            LoadDef {
+                flag_ptr,
+                flag_value,
+            });
+        auto intermediate = ILValue::local(++ctx.next_var, ILBaseType::W);
+        ctx.add_operation(
+            ExprDef {
+                flag_value,
+                ILValue::integer(1, ILBaseType::W),
+                ILOperation::Xor,
+                intermediate,
+            });
+        auto ret_value = ILValue::local(++ctx.next_var, ILBaseType::W);
+        ctx.add_operation(
+            ExprDef {
+                intermediate,
+                ILValue::integer(1, ILBaseType::W),
+                ILOperation::And,
+                ret_value,
+            });
+        return QBEOperand { expr.node, ret_value };
+    } break;
+    default:
+        NYI("QBE mapping for optional operator `{}`", Operator_name(expr.op));
+        break;
+    }
+}
+
+template<>
 GenResult qbe_operator(QBEUnaryExpr const &expr, OptionalType const &optional, QBEContext &ctx)
 {
     auto operand = TRY_DEREFERENCE(expr.operand, ctx);
@@ -505,7 +675,6 @@ GenResult qbe_operator(QBEUnaryExpr const &expr, OptionalType const &optional, Q
     switch (expr.op) {
     case Operator::Unwrap: {
         optional_must(operand, optional, ctx);
-        auto ret = ILValue::pointer(++ctx.next_var);
         return unwrap_optional(expr.node, operand, ctx);
     } break;
     case Operator::LogicalInvert: {
@@ -576,9 +745,14 @@ GenResult qbe_operator(QBEUnaryExpr const &expr, QBEContext &ctx)
             expr.operand.get_value().inner);
         return QBEOperand { expr.node, expr.operand.get_value() };
     }
+    QBEUnaryExpr expr_materialized {
+        expr.node,
+        expr.op,
+        TRY_MATERIALIZE(expr.operand, ctx),
+    };
     return std::visit(
-        [&expr, &ctx](auto const &descr) {
-            return qbe_operator(expr, descr, ctx);
+        [&expr_materialized, &ctx](auto const &descr) {
+            return qbe_operator(expr_materialized, descr, ctx);
         },
         value_type->description);
 }

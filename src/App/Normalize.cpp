@@ -188,12 +188,6 @@ ASTNode normalize(ASTNode n, Enum const &impl)
 }
 
 template<>
-ASTNode normalize(ASTNode n, Error const &impl)
-{
-    return make_node<Error>(n, normalize(impl.expression));
-}
-
-template<>
 ASTNode normalize(ASTNode n, ExpressionList const &impl)
 {
     for (auto const &expr : impl.expressions) {
@@ -446,8 +440,8 @@ ASTNode normalize(ASTNode n, TypeSpecification const &impl)
             [](OptionalDescriptionNode const &d) -> TypeSpecificationDescription {
                 return OptionalDescriptionNode { normalize(d.optional_of) };
             },
-            [](ErrorDescriptionNode const &d) -> TypeSpecificationDescription {
-                return ErrorDescriptionNode {
+            [](ResultDescriptionNode const &d) -> TypeSpecificationDescription {
+                return ResultDescriptionNode {
                     normalize(d.success),
                     normalize(d.error),
                 };

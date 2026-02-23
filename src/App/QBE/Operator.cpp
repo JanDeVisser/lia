@@ -342,6 +342,11 @@ QBEValue evaluate_Unwrap(QBEValue const &lhs, QBEValue const &rhs)
     fatal("Cannot unwrap a value");
 }
 
+QBEValue evaluate_UnwrapError(QBEValue const &lhs, QBEValue const &rhs)
+{
+    fatal("Cannot unwrap an error of a value");
+}
+
 QBEValue evaluate(QBEValue const &lhs, Operator op, QBEValue const &rhs)
 {
     switch (op) {

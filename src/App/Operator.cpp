@@ -41,6 +41,7 @@ std::vector<BinaryOperator> binary_ops {
     { PseudoType::Boolean, Operator::LogicalAnd, PseudoType::Boolean, PseudoType::Boolean },
     { PseudoType::Boolean, Operator::LogicalOr, PseudoType::Boolean, PseudoType::Boolean },
     { TypeKind::OptionalType, Operator::LogicalOr, PseudoType::Refer, PseudoType::Refer },
+    { TypeKind::ResultType, Operator::LogicalOr, PseudoType::Refer, PseudoType::Refer },
 };
 
 std::vector<UnaryOperator> unary_ops = {
@@ -51,11 +52,14 @@ std::vector<UnaryOperator> unary_ops = {
     { Operator::Negate, TypeKind::FloatType, PseudoType::Self },
     { Operator::LogicalInvert, TypeKind::BoolType, PseudoType::Self },
     { Operator::LogicalInvert, TypeKind::OptionalType, PseudoType::Boolean },
+    { Operator::LogicalInvert, TypeKind::ResultType, PseudoType::Boolean },
     { Operator::Length, TypeKind::SliceType, PseudoType::Long },
     { Operator::Length, TypeKind::Array, PseudoType::Long },
     { Operator::Length, TypeKind::DynArray, PseudoType::Long },
     { Operator::Length, TypeKind::ZeroTerminatedArray, PseudoType::Long },
     { Operator::Unwrap, TypeKind::OptionalType, PseudoType::Refer },
+    { Operator::Unwrap, TypeKind::ResultType, PseudoType::Refer },
+    { Operator::UnwrapError, TypeKind::ResultType, PseudoType::Error },
 };
 
 std::map<Operator, Operator> assign_ops = {
@@ -101,9 +105,24 @@ bool Operand::matches(pType const &concrete, pType const &hint) const
                     return concrete_value_type == TypeRegistry::i64;
                 case PseudoType::String:
                     return concrete_value_type == TypeRegistry::string;
-                case PseudoType::Refer:
-                    assert(is<OptionalType>(hint_value_type));
-                    return concrete_value_type == get<OptionalType>(hint_value_type).type;
+                case PseudoType::Refer: {
+                    auto const &refer = std::visit(
+                        overloads {
+                            [](OptionalType const &optional) -> pType {
+                                return optional.type;
+                            },
+                            [](ResultType const &result) -> pType {
+                                return result.success;
+                            },
+                            [](auto const &) -> pType {
+                                UNREACHABLE();
+                            } },
+                        hint_value_type->description);
+                    return concrete_value_type->compatible(refer);
+                }
+                case PseudoType::Error:
+                    assert(is<ResultType>(hint_value_type));
+                    return concrete_value_type == get<ResultType>(hint_value_type).error;
                 case PseudoType::Lhs:
                 case PseudoType::Rhs:
                     return hint_value_type == concrete_value_type;
@@ -140,8 +159,20 @@ pType BinaryOperator::return_type(pType const &lhs_type, pType const &rhs_type) 
                 case PseudoType::String:
                     return TypeRegistry::string;
                 case PseudoType::Refer:
-                    assert(is<OptionalType>(lhs_value_type));
-                    return get<OptionalType>(lhs_value_type).type;
+                    return std::visit(
+                        overloads {
+                            [](OptionalType const &optional) -> pType {
+                                return optional.type;
+                            },
+                            [](ResultType const &result) -> pType {
+                                return result.success;
+                            },
+                            [](auto const &) -> pType {
+                                UNREACHABLE();
+                            } },
+                        lhs_value_type->description);
+                case PseudoType::Error:
+                    return get<ResultType>(lhs_value_type).error;
                 case PseudoType::Lhs:
                     return lhs_value_type;
                 case PseudoType::Rhs:

@@ -69,9 +69,9 @@ pType resolve(OptionalDescriptionNode const &d, ASTNode const &n)
 }
 
 template<>
-pType resolve(ErrorDescriptionNode const &d, ASTNode const &n)
+pType resolve(ResultDescriptionNode const &d, ASTNode const &n)
 {
-    return TypeRegistry::the().error_of(resolve(d.success), resolve(d.error));
+    return TypeRegistry::the().result_of(resolve(d.success), resolve(d.error));
 }
 
 pType resolve(ASTNode const &n)

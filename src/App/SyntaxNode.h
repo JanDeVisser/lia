@@ -40,7 +40,6 @@ using namespace Util;
     S(Embed)               \
     S(Enum)                \
     S(EnumValue)           \
-    S(Error)               \
     S(ExpressionList)      \
     S(ExternLink)          \
     S(ForStatement)        \
@@ -266,12 +265,6 @@ struct Enum {
     Enum(std::wstring name, ASTNode underlying_type, ASTNodes values);
 };
 
-struct Error {
-    ASTNode expression;
-
-    Error(ASTNode expression);
-};
-
 struct ExpressionList {
     ASTNodes expressions;
 
@@ -454,7 +447,7 @@ struct OptionalDescriptionNode {
     ASTNode optional_of;
 };
 
-struct ErrorDescriptionNode {
+struct ResultDescriptionNode {
     ASTNode success;
     ASTNode error;
 };
@@ -467,7 +460,7 @@ using TypeSpecificationDescription = std::variant<
     ArrayDescriptionNode,
     DynArrayDescriptionNode,
     OptionalDescriptionNode,
-    ErrorDescriptionNode>;
+    ResultDescriptionNode>;
 
 template<class S>
 concept is_type_specification = std::is_same_v<S, TypeNameNode>
@@ -477,7 +470,7 @@ concept is_type_specification = std::is_same_v<S, TypeNameNode>
     || std::is_same_v<S, ArrayDescriptionNode>
     || std::is_same_v<S, DynArrayDescriptionNode>
     || std::is_same_v<S, OptionalDescriptionNode>
-    || std::is_same_v<S, ErrorDescriptionNode>;
+    || std::is_same_v<S, ResultDescriptionNode>;
 
 struct TypeSpecification {
 
@@ -547,7 +540,6 @@ using SyntaxNode = std::variant<Dummy,
     Embed,
     Enum,
     EnumValue,
-    Error,
     ExpressionList,
     ExternLink,
     ForStatement,

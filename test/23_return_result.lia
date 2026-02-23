@@ -1,0 +1,35 @@
+struct X {
+    foo: i64,
+    bar: i64,
+}
+
+enum E {
+  Error1 = 23,
+  Error2 = 46,
+}
+
+func ret_result(ok: bool) X/E {
+    if (!ok) {
+        return E.Error1
+    }
+    x: X = { 69, 420 }
+    return x
+}
+
+public func main() i32 {
+    x := ret_result(true)
+    if (x) {
+        putint((must x).bar)
+        endln()
+    }
+    x = ret_result(false)
+    if (!x) {
+        putint((error x)::u64)
+        endln()
+    }
+    y := x || { 12, 42 }
+    putint(y.bar)
+    endln()
+    return 0::i32
+}
+

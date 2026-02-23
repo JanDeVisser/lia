@@ -92,10 +92,8 @@ void dump(ASTNode const &n, Enum const &impl, std::wostream &os, int indent)
     }
 }
 
-template<class N>
-    requires std::is_same_v<N, Error>
-    || std::is_same_v<N, Return>
-void dump(ASTNode const &n, N const &impl, std::wostream &os, int indent)
+template<>
+void dump(ASTNode const &n, Return const &impl, std::wostream &os, int indent)
 {
     dump(impl.expression, os, indent + 4);
 }
@@ -388,7 +386,7 @@ std::wstring to_string(ASTNode const &n, TypeSpecification const &impl)
             [](OptionalDescriptionNode const &d) -> std::wstring {
                 return std::format(L"{}?", to_string(d.optional_of));
             },
-            [](ErrorDescriptionNode const &d) -> std::wstring {
+            [](ResultDescriptionNode const &d) -> std::wstring {
                 return std::format(L"{}/{}", to_string(d.success), to_string(d.error));
             },
         },

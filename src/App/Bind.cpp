@@ -717,12 +717,6 @@ BindResult bind(ASTNode n, EnumValue &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, Error &impl)
-{
-    return bind(impl.expression);
-}
-
-template<>
 BindResult bind(ASTNode n, ExpressionList &impl)
 {
     return TypeRegistry::the().typelist_of(try_bind_nodes(impl.expressions));
@@ -961,6 +955,20 @@ BindResult bind(ASTNode n, UnaryExpression &impl)
                                 overloads {
                                     [](OptionalType const &opt) -> pType {
                                         return TypeRegistry::the().referencing(opt.type);
+                                    },
+                                    [](ResultType const &result) -> pType {
+                                        return TypeRegistry::the().referencing(result.success);
+                                    },
+                                    [](auto const &) -> pType {
+                                        UNREACHABLE();
+                                        return TypeRegistry::void_;
+                                    } },
+                                operand_type->description);
+                        case PseudoType::Error:
+                            return std::visit(
+                                overloads {
+                                    [](ResultType const &result) -> pType {
+                                        return TypeRegistry::the().referencing(result.error);
                                     },
                                     [](auto const &) -> pType {
                                         UNREACHABLE();

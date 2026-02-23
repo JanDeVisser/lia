@@ -1,0 +1,13 @@
+{
+  "name": "23_return_result",
+  "comptime_stdout": [],
+  "comptime_stderr": [],
+  "stdout": [
+    "420",
+    "23",
+    "42"
+  ],
+  "stderr": [],
+  "exit": 0,
+  "args": []
+}

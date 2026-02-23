@@ -20,5 +20,6 @@
   "19_must_opt",
   "20_enum",
   "21_opt_or",
-  "22_for_loop"
+  "22_for_loop",
+  "23_return_result"
 ]

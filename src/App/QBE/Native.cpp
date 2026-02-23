@@ -467,20 +467,20 @@ bool native_call_x86_64(std::string_view name, uint8_t *params, std::vector<ILTy
                     allocate_value(bt, params, offset);
                     offset += alignat(size_of(bt), 8);
                 },
-                [&allocate_value, &offset, &params](ILStructType const &strukt) {
+                [&allocate_value, &offset, &params](ILType::ILAggregate const &aggregate) {
                     int   align { 0 };
                     auto *mem = params + offset;
                     offset += alignat(sizeof(void *), 8);
 
                     auto fld_offset = 0;
-                    for (auto comp : strukt.layout) {
+                    for (auto comp : aggregate.layout) {
                         fld_offset = alignat(fld_offset, align_of(comp));
                         allocate_value(comp, mem, fld_offset);
                         align = std::max(align, align_of(comp));
                         fld_offset += size_of(comp);
                     }
                 } },
-            type);
+            type.inner);
     }
 
     trace("Trampoline:");

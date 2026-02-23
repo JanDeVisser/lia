@@ -76,22 +76,18 @@ std::wstring TypeList::to_string() const
 intptr_t TypeList::size_of() const
 {
     intptr_t ret { 0 };
-    std::for_each(
-        types.begin(),
-        types.end(), [&ret](pType const &t) {
-            ret = alignat(ret, t->align_of()) + t->size_of();
-        });
+    std::ranges::for_each(types, [&ret](pType const &t) {
+        ret = alignat(ret, t->align_of()) + t->size_of();
+    });
     return ret;
 }
 
 intptr_t TypeList::align_of() const
 {
     intptr_t ret { 0 };
-    std::for_each(
-        types.begin(),
-        types.end(), [&ret](pType const &t) {
-            ret = std::max(ret, t->align_of());
-        });
+    std::ranges::for_each(types, [&ret](pType const &t) {
+        ret = std::max(ret, t->align_of());
+    });
     return ret;
 }
 
@@ -263,19 +259,26 @@ intptr_t OptionalType::align_of() const
     return type->align_of();
 }
 
-std::wstring ErrorType::to_string() const
+std::wstring ResultType::to_string() const
 {
-    return std::format(L"Error({}/{})", type_name(success), type_name(error));
+    return std::format(L"Result({}/{})", type_name(success), type_name(error));
 }
 
-intptr_t ErrorType::size_of() const
+intptr_t ResultType::size_of() const
 {
-    return TypeRegistry::boolean->size_of() + std::max(success->size_of(), error->size_of());
+    return flag_offset() + TypeRegistry::boolean->size_of();
 }
 
-intptr_t ErrorType::align_of() const
+intptr_t ResultType::align_of() const
 {
     return std::max(success->align_of(), error->align_of());
+}
+
+intptr_t ResultType::flag_offset() const
+{
+    return alignat(
+        std::max(success->size_of(), error->size_of()),
+        std::max(success->align_of(), error->align_of()));
 }
 
 std::wstring TypeType::to_string() const
@@ -407,8 +410,14 @@ bool Type::assignable_to(pType const &lhs) const
             [](BoolType const &, OptionalType const &) -> bool {
                 return true;
             },
+            [](BoolType const &, ResultType const &) -> bool {
+                return true;
+            },
             [this, &rhs](OptionalType const &optional, auto const &) -> bool {
                 return optional.type == rhs;
+            },
+            [this, &rhs](ResultType const &result, auto const &) -> bool {
+                return result.success == rhs || result.error == rhs;
             },
             [&lhs](ReferenceType const &ref, auto const &) -> bool {
                 return ref.referencing->assignable_to(lhs);
@@ -432,37 +441,38 @@ std::map<std::wstring, pType> Type::infer_generic_arguments(pType const &param_t
 {
     std::function<void(std::map<std::wstring, pType> &, pType const &, pType const &)> infer;
     infer = [&infer](std::map<std::wstring, pType> &mapping, pType const &arg, pType const &param) {
-        std::visit(overloads {
-                       [&mapping, &infer](OptionalType const &d, OptionalType const &other) -> void {
-                           infer(mapping, d.type, other.type);
-                       },
-                       [&mapping, &infer](ErrorType const &d, ErrorType const &other) -> void {
-                           infer(mapping, d.success, other.success);
-                           infer(mapping, d.error, other.error);
-                       },
-                       [&mapping, &infer](SliceType const &d, SliceType const &other) -> void {
-                           infer(mapping, d.slice_of, other.slice_of);
-                       },
-                       [&mapping, &infer](Array const &d, Array const &other) -> void {
-                           infer(mapping, d.array_of, other.array_of);
-                       },
-                       [&mapping, &infer](DynArray const &d, DynArray const &other) -> void {
-                           infer(mapping, d.array_of, other.array_of);
-                       },
-                       [&mapping, &infer](ZeroTerminatedArray const &d, ZeroTerminatedArray const &other) -> void {
-                           infer(mapping, d.array_of, other.array_of);
-                       },
-                       [&mapping, &infer](RangeType const &d, RangeType const &other) -> void {
-                           infer(mapping, d.range_of, other.range_of);
-                       },
-                       [&mapping, &infer, &arg](auto const &d, TypeAlias const &other) -> void {
-                           infer(mapping, arg, other.alias_of);
-                       },
-                       [&mapping, &arg](auto const &d, GenericParameter const &generic) -> void {
-                           mapping[generic.name] = arg;
-                       },
-                       [](auto const &d, auto const &other) -> void {
-                       } },
+        std::visit(
+            overloads {
+                [&mapping, &infer](OptionalType const &d, OptionalType const &other) -> void {
+                    infer(mapping, d.type, other.type);
+                },
+                [&mapping, &infer](ResultType const &d, ResultType const &other) -> void {
+                    infer(mapping, d.success, other.success);
+                    infer(mapping, d.error, other.error);
+                },
+                [&mapping, &infer](SliceType const &d, SliceType const &other) -> void {
+                    infer(mapping, d.slice_of, other.slice_of);
+                },
+                [&mapping, &infer](Array const &d, Array const &other) -> void {
+                    infer(mapping, d.array_of, other.array_of);
+                },
+                [&mapping, &infer](DynArray const &d, DynArray const &other) -> void {
+                    infer(mapping, d.array_of, other.array_of);
+                },
+                [&mapping, &infer](ZeroTerminatedArray const &d, ZeroTerminatedArray const &other) -> void {
+                    infer(mapping, d.array_of, other.array_of);
+                },
+                [&mapping, &infer](RangeType const &d, RangeType const &other) -> void {
+                    infer(mapping, d.range_of, other.range_of);
+                },
+                [&mapping, &infer, &arg](auto const &d, TypeAlias const &other) -> void {
+                    infer(mapping, arg, other.alias_of);
+                },
+                [&mapping, &arg](auto const &d, GenericParameter const &generic) -> void {
+                    mapping[generic.name] = arg;
+                },
+                [](auto const &d, auto const &other) -> void {
+                } },
             arg->description, param->description);
     };
     if (std::holds_alternative<TypeAlias>(description)) {
@@ -502,13 +512,14 @@ TypeRegistry &TypeRegistry::the()
 pType TypeRegistry::generic_parameter(std::wstring name)
 {
     for (auto const &t : types) {
-        if (std::visit(overloads {
-                           [&name](GenericParameter const descr) -> bool {
-                               return descr.name == name;
-                           },
-                           [](auto const &) -> bool {
-                               return false;
-                           } },
+        if (std::visit(
+                overloads {
+                    [&name](GenericParameter const descr) -> bool {
+                        return descr.name == name;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
                 t.description)) {
             return t.id;
         }
@@ -663,13 +674,13 @@ pType TypeRegistry::range_of(pType type)
     return ret;
 }
 
-pType TypeRegistry::error_of(pType success, pType error)
+pType TypeRegistry::result_of(pType success, pType error)
 {
     assert(success);
     assert(error);
     for (auto const &t : types) {
         if (std::visit(overloads {
-                           [&success, &error](ErrorType const descr) -> bool {
+                           [&success, &error](ResultType const descr) -> bool {
                                return descr.success == success && descr.error == error;
                            },
                            [](auto const &) -> bool {
@@ -679,7 +690,7 @@ pType TypeRegistry::error_of(pType success, pType error)
             return t.id;
         }
     }
-    auto ret = make_type(std::format(L"{}/{}", success->name, error->name), ErrorType { success, error });
+    auto ret = make_type(std::format(L"{}/{}", success->name, error->name), ResultType { success, error });
     return ret;
 }
 

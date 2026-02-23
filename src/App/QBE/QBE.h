@@ -53,15 +53,34 @@ enum class ILBaseType {
 #undef S
 };
 
-struct ILStructType {
-    std::wstring            name;
-    std::vector<ILBaseType> layout;
+using ILLayout = std::vector<ILBaseType>;
 
-    bool operator==(ILStructType const &) const = default;
-    bool operator!=(ILStructType const &) const = default;
+struct ILType {
+
+    struct ILAggregate {
+        std::wstring name;
+        intptr_t     size_of;
+        intptr_t     align_of;
+        ILLayout     layout;
+
+        ILAggregate(pType const &type);
+    };
+
+    std::variant<ILBaseType, ILAggregate> inner;
+
+    ILType() = default;
+    ILType(ILType const &) = default;
+
+    ILType(ILBaseType const &bt)
+        : inner(bt)
+    {
+    }
+
+    ILType(pType const &type)
+        : inner(ILAggregate { type })
+    {
+    }
 };
-
-using ILType = std::variant<std::monostate, ILBaseType, ILStructType>;
 
 bool operator==(ILType const &type, ILBaseType other);
 bool operator!=(ILType const &type, ILBaseType other);
@@ -69,20 +88,24 @@ bool operator==(ILBaseType const &type, ILType const &other);
 bool operator!=(ILBaseType const &type, ILType const &other);
 
 std::wostream &operator<<(std::wostream &os, ILBaseType const &type);
-std::wostream &operator<<(std::wostream &os, ILStructType const &type);
+std::wostream &operator<<(std::wostream &os, ILType::ILAggregate const &aggregate);
 std::wostream &operator<<(std::wostream &os, ILType const &type);
 
-ILBaseType basetype(ILType const &type);
-ILBaseType must_extend(ILType const &type);
-ILBaseType targettype(ILType const &type);
-int        align_of(ILBaseType const &type);
-int        size_of(ILBaseType const &type);
-int        align_of(ILType const &type);
-int        size_of(ILType const &type);
-bool       qbe_first_class_type(pType const &type);
-ILBaseType qbe_type_code(pType const &type);
-ILBaseType qbe_load_code(pType const &type);
-ILType     qbe_type(pType const &type);
+ILBaseType   basetype(ILType const &type);
+ILBaseType   must_extend(ILType const &type);
+ILBaseType   targettype(ILType const &type);
+int          is_integer(ILBaseType type);
+int          is_float(ILBaseType type);
+int          align_of(ILBaseType const &type);
+int          size_of(ILBaseType const &type);
+int          align_of(ILType const &type);
+int          size_of(ILType const &type);
+std::wstring type_ref(pType const &type);
+bool         qbe_first_class_type(pType const &type);
+ILBaseType   qbe_type_code(pType const &type);
+ILBaseType   qbe_load_code(pType const &type);
+ILType       qbe_type(pType const &type);
+ILLayout     flatten_type(pType const &type);
 
 template<typename T>
 ILBaseType il_type_for()
@@ -257,8 +280,14 @@ struct ILValue {
         std::vector<ILValue>>;
 
     ILValue()
-        : type(std::monostate {})
+        : type()
         , inner(0)
+    {
+    }
+
+    ILValue(ILValue const &other)
+        : type(other.type)
+        , inner(other.inner)
     {
     }
 
@@ -271,7 +300,7 @@ struct ILValue {
 
     operator bool() const
     {
-        return std::holds_alternative<std::monostate>(type);
+        return size_of(type) == 0;
     }
 
     template<typename TypeDesc>
@@ -335,7 +364,9 @@ struct ILValue {
         return ret;
     }
 
-    static ILValue sequence(std::vector<ILValue> values, int align, int size)
+    using ILValues = std::vector<ILValue>;
+
+    static ILValue sequence(ILValues values, int align, int size)
     {
         return { ILType { ILBaseType::V }, std::move(values) };
     }
@@ -348,14 +379,14 @@ struct ILValue {
 
     static ILValue null()
     {
-        return { std::monostate {}, 0 };
+        return { ILType {}, 0 };
     }
 
     ILType       type { ILBaseType::V };
     ILValueInner inner;
 };
 
-using ILValues = std::vector<ILValue>;
+using ILValues = ILValue::ILValues;
 
 std::wostream &operator<<(std::wostream &os, ILValue const &value);
 std::wostream &operator<<(std::wostream &os, ILOperation const &op);
@@ -587,6 +618,20 @@ struct QBEValue {
     QBEValue() = default;
     QBEValue(QBEValue const &) = default;
 
+    QBEValue(ILBaseType type, intptr_t value)
+        : type(type)
+        , payload(value)
+    {
+        assert(is_integer(type));
+    }
+
+    QBEValue(ILBaseType type, double value)
+        : type(type)
+        , payload(value)
+    {
+        assert(is_float(type));
+    }
+
     template<typename T>
     QBEValue(T)
     {
@@ -782,6 +827,7 @@ struct QBEOperand {
 
     GenResult      get_value(QBEContext &ctx);
     GenResult      dereference(QBEContext &ctx) const;
+    GenResult      materialize(QBEContext &ctx) const;
     ILValue const &get_value() const
     {
         assert(value.has_value());
@@ -790,7 +836,7 @@ struct QBEOperand {
 
     void set_value(ILValue const &v)
     {
-        value = v;
+        value.emplace(v);
     }
 
 private:
@@ -815,6 +861,18 @@ struct QBEUnaryExpr {
         {                                                   \
             QBEOperand __op;                                \
             if (auto __res = op.dereference(ctx); !__res) { \
+                return std::unexpected(__res.error());      \
+            } else {                                        \
+                __op = (__res.value());                     \
+            }                                               \
+            (__op);                                         \
+        })
+
+#define TRY_MATERIALIZE(op, ctx)                            \
+    (                                                       \
+        {                                                   \
+            QBEOperand __op;                                \
+            if (auto __res = op.materialize(ctx); !__res) { \
                 return std::unexpected(__res.error());      \
             } else {                                        \
                 __op = (__res.value());                     \
@@ -874,29 +932,6 @@ struct std::formatter<Lia::QBE::ILBaseType, wchar_t> {
 };
 
 template<>
-struct std::formatter<Lia::QBE::ILStructType, wchar_t> {
-
-    template<class ParseContext>
-    constexpr ParseContext::iterator parse(ParseContext &ctx)
-    {
-        auto it = ctx.begin();
-        if (it == ctx.end() || *it == '}') {
-            return it;
-        }
-        ++it;
-        return it;
-    }
-
-    template<class FmtContext>
-    FmtContext::iterator format(Lia::QBE::ILStructType const &type, FmtContext &ctx) const
-    {
-        std::wostringstream out;
-        out << type;
-        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
-    }
-};
-
-template<>
 struct std::formatter<Lia::QBE::ILType, wchar_t> {
 
     template<class ParseContext>
@@ -922,7 +957,7 @@ struct std::formatter<Lia::QBE::ILType, wchar_t> {
                 [&out](auto const &inner) {
                     out << inner;
                 } },
-            type);
+            type.inner);
         return std::ranges::copy(std::move(out).str(), ctx.out()).out;
     }
 };

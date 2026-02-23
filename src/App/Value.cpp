@@ -496,6 +496,11 @@ Atom evaluate_Unwrap(Atom const &lhs, Atom const &rhs)
     fatal("Cannot unwrap a value");
 }
 
+Atom evaluate_UnwrapError(Atom const &lhs, Atom const &rhs)
+{
+    fatal("Cannot unwrap an error of a value");
+}
+
 Atom evaluate(Atom const &lhs, Operator op, Atom const &rhs)
 {
     switch (op) {

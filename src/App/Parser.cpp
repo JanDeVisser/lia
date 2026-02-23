@@ -68,6 +68,7 @@ std::vector<Parser::OperatorDef> Parser::operators {
     { Operator::Subscript, ']', 15, Position::Closing },
     { Operator::Subtract, '-', 11 },
     { Operator::Unwrap, LiaKeyword::Must, 14, Position::Prefix, Associativity::Right },
+    { Operator::UnwrapError, LiaKeyword::Error, 14, Position::Prefix, Associativity::Right },
 };
 
 struct BindingPower {
@@ -195,8 +196,6 @@ ASTNode Parser::parse_statement()
             return parse_embed();
         case LiaKeyword::Enum:
             return parse_enum();
-        case LiaKeyword::Error:
-            return parse_return_error();
         case LiaKeyword::For:
             return parse_for();
         case LiaKeyword::Func:
@@ -210,7 +209,7 @@ ASTNode Parser::parse_statement()
         case LiaKeyword::Public:
             return parse_public();
         case LiaKeyword::Return:
-            return parse_return_error();
+            return parse_return();
         case LiaKeyword::Struct:
             return parse_struct();
         case LiaKeyword::While:
@@ -713,7 +712,7 @@ ASTNode Parser::parse_type()
         if (auto error_type = parse_type(); error_type != nullptr) {
             return make_node<TypeSpecification>(
                 name->location + lexer.last_location,
-                ErrorDescriptionNode { type, error_type });
+                ResultDescriptionNode { type, error_type });
         }
         return {};
     }
@@ -1130,19 +1129,16 @@ ASTNode Parser::parse_public()
     return make_node<PublicDeclaration>(t.location + decl->location, *name, decl);
 }
 
-ASTNode Parser::parse_return_error()
+ASTNode Parser::parse_return()
 {
     auto kw = lexer.lex();
-    assert(kw.matches_keyword(LiaKeyword::Return) || kw.matches_keyword(LiaKeyword::Error));
+    assert(kw.matches_keyword(LiaKeyword::Return));
     auto expr = parse_expression();
     if (!expr) {
         append(kw.location, "Error parsing return expression");
         return {};
     }
-    if (kw.matches_keyword(LiaKeyword::Return)) {
-        return make_node<Return>(kw.location + expr->location, expr);
-    }
-    return make_node<Error>(kw.location + expr->location, expr);
+    return make_node<Return>(kw.location + expr->location, expr);
 }
 
 ASTNode Parser::parse_struct()

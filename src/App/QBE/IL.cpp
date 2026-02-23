@@ -14,22 +14,22 @@ namespace Lia::QBE {
 
 bool operator==(ILType const &type, ILBaseType other)
 {
-    return std::holds_alternative<ILBaseType>(type) && std::get<ILBaseType>(type) == other;
+    return std::holds_alternative<ILBaseType>(type.inner) && std::get<ILBaseType>(type.inner) == other;
 }
 
 bool operator==(ILBaseType const &type, ILType const &other)
 {
-    return std::holds_alternative<ILBaseType>(other) && std::get<ILBaseType>(other) == type;
+    return std::holds_alternative<ILBaseType>(other.inner) && std::get<ILBaseType>(other.inner) == type;
 }
 
 bool operator!=(ILType const &type, ILBaseType other)
 {
-    return !std::holds_alternative<ILBaseType>(type) || std::get<ILBaseType>(type) != other;
+    return !std::holds_alternative<ILBaseType>(type.inner) || std::get<ILBaseType>(type.inner) != other;
 }
 
 bool operator!=(ILBaseType const &type, ILType const &other)
 {
-    return !std::holds_alternative<ILBaseType>(other) || std::get<ILBaseType>(other) != type;
+    return !std::holds_alternative<ILBaseType>(other.inner) || std::get<ILBaseType>(other.inner) != type;
 }
 
 bool qbe_first_class_type(pType const &type)
@@ -153,6 +153,24 @@ ILBaseType qbe_load_code(pType const &type)
         type->description);
 }
 
+int is_integer(ILBaseType type)
+{
+    return type <= ILBaseType::L;
+}
+
+int is_float(ILBaseType type)
+{
+    return type >= ILBaseType::S;
+}
+
+ILType::ILAggregate::ILAggregate(pType const &type)
+    : name(std::move(type_ref(type)))
+    , size_of(type->size_of())
+    , align_of(type->align_of())
+    , layout(std::move(flatten_type(type)))
+{
+}
+
 ILBaseType basetype(ILType const &type)
 {
     return std::visit(
@@ -163,61 +181,67 @@ ILBaseType basetype(ILType const &type)
             [](ILBaseType const &base_type) -> ILBaseType {
                 return static_cast<ILBaseType>(static_cast<uint8_t>(base_type) & 0xFC);
             },
-            [](ILStructType const &) -> ILBaseType {
+            [](auto const &) -> ILBaseType {
                 return ILBaseType::L;
             } },
-        type);
+        type.inner);
 }
 
-void flatten_type(pType const &type, std::vector<ILBaseType> &components);
+void flatten_type(pType const &type, ILLayout &layout);
 
-void flatten_type(BoolType const &, std::vector<ILBaseType> &components)
+void flatten_type(BoolType const &, ILLayout &layout)
 {
-    components.emplace_back(ILBaseType::W);
+    layout.emplace_back(ILBaseType::W);
 }
 
-void flatten_type(EnumType const &enum_type, std::vector<ILBaseType> &components)
+void flatten_type(EnumType const &enum_type, ILLayout &layout)
 {
-    flatten_type(enum_type.underlying_type, components);
+    flatten_type(enum_type.underlying_type, layout);
 }
 
-void flatten_type(FloatType const &flt_type, std::vector<ILBaseType> &components)
+void flatten_type(FloatType const &flt_type, ILLayout &layout)
 {
-    components.emplace_back(qbe_type_code(flt_type));
+    layout.emplace_back(qbe_type_code(flt_type));
 }
 
-void flatten_type(IntType const &int_type, std::vector<ILBaseType> &components)
+void flatten_type(IntType const &int_type, ILLayout &layout)
 {
-    components.emplace_back(qbe_type_code(int_type));
+    layout.emplace_back(qbe_type_code(int_type));
 }
 
-void flatten_type(PointerType const &, std::vector<ILBaseType> &components)
+void flatten_type(PointerType const &, ILLayout &layout)
 {
-    components.emplace_back(ILBaseType::L);
+    layout.emplace_back(ILBaseType::L);
 }
 
-void flatten_type(SliceType const &, std::vector<ILBaseType> &components)
+void flatten_type(SliceType const &, ILLayout &layout)
 {
-    components.emplace_back(ILBaseType::L);
-    components.emplace_back(ILBaseType::L);
+    layout.emplace_back(ILBaseType::L);
+    layout.emplace_back(ILBaseType::L);
 }
 
-void flatten_type(StructType const &strukt, std::vector<ILBaseType> &components)
+void flatten_type(StructType const &strukt, ILLayout &layout)
 {
     for (auto const &field : strukt.fields) {
-        flatten_type(field.type, components);
+        flatten_type(field.type, layout);
     }
 }
 
-void flatten_type(TypeType const &type_type, std::vector<ILBaseType> &components)
+void flatten_type(TypeType const &type_type, ILLayout &layout)
 {
-    flatten_type(type_type.type, components);
+    flatten_type(type_type.type, layout);
 }
 
-void flatten_type(OptionalType const &opt, std::vector<ILBaseType> &components)
+void flatten_type(OptionalType const &opt, ILLayout &layout)
 {
-    flatten_type(opt.type, components);
-    components.emplace_back(ILBaseType::W);
+    flatten_type(opt.type, layout);
+    layout.emplace_back(ILBaseType::W);
+}
+
+void flatten_type(ResultType const &result, ILLayout &layout)
+{
+    layout.emplace_back(ILBaseType::W);
+    flatten_type((result.success->size_of() > result.error->size_of()) ? result.success : result.error);
 }
 
 void flatten_type(auto const &descr, std::vector<ILBaseType> &)
@@ -235,9 +259,9 @@ void flatten_type(pType const &type, std::vector<ILBaseType> &components)
         type->description);
 }
 
-std::vector<ILBaseType> flatten_type(pType const &type)
+ILLayout flatten_type(pType const &type)
 {
-    std::vector<ILBaseType> ret;
+    ILLayout ret;
     flatten_type(type, ret);
     return ret;
 }
@@ -246,8 +270,11 @@ ILType qbe_type(pType const &type)
 {
     return std::visit(
         overloads {
+            [](std::monostate const &) -> ILType {
+                return {};
+            },
             [](VoidType const &) -> ILType {
-                return std::monostate();
+                return {};
             },
             [](BoolType const &) -> ILType {
                 return ILBaseType::W;
@@ -282,23 +309,11 @@ ILType qbe_type(pType const &type)
             [](ZeroTerminatedArray const &) -> ILType {
                 return ILBaseType::L;
             },
-            [&type](SliceType const &slice) -> ILType {
-                return ILStructType { L":slice_t", flatten_type(type) };
-            },
             [&type](EnumType const &enum_type) -> ILType {
                 return qbe_type(enum_type.underlying_type);
             },
-            [&type](OptionalType const &opt) -> ILType {
-                return ILStructType { std::format(L":opt{}", *(type.id)), flatten_type(type) };
-            },
-            [&type](StructType const &strukt) -> ILType {
-                return ILStructType { std::format(L":struct{}", *(type.id)), flatten_type(type) };
-            },
-            [&type](TypeType const &type_type) -> ILType {
-                return ILStructType { std::format(L":type{}", *(type.id)), flatten_type(type) };
-            },
-            [](auto const &descr) -> ILType {
-                NYI("qbe_type() for type description type `{}`", typeid(decltype(descr)).name());
+            [&type](auto const &descr) -> ILType {
+                return ILType { type };
             } },
         type->description);
 }
@@ -332,7 +347,7 @@ ILBaseType must_extend(ILType const &type)
             [](auto const &) -> ILBaseType {
                 UNREACHABLE();
             } },
-        type);
+        type.inner);
 }
 
 ILBaseType targettype(ILType const &type)
@@ -353,10 +368,10 @@ ILBaseType targettype(ILType const &type)
                     return ILBaseType::W;
                 }
             },
-            [](ILStructType const &) -> ILBaseType {
+            [](auto const &) -> ILBaseType {
                 return ILBaseType::L;
             } },
-        type);
+        type.inner);
 }
 
 int align_of(ILBaseType const &type)
@@ -374,13 +389,9 @@ int align_of(ILBaseType const &type)
     }
 }
 
-int align_of(ILStructType const &type)
+int align_of(ILType::ILAggregate const &type)
 {
-    int ret { 0 };
-    for (auto component : type.layout) {
-        ret = std::max(ret, align_of(component));
-    }
-    return ret;
+    return type.align_of;
 }
 
 int align_of(std::monostate const &)
@@ -403,13 +414,9 @@ int size_of(ILBaseType const &type)
     }
 }
 
-int size_of(ILStructType const &type)
+int size_of(ILType::ILAggregate const &type)
 {
-    int size { 0 };
-    for (auto component : type.layout) {
-        size = alignat(size, align_of(component)) + size_of(component);
-    }
-    return size;
+    return type.size_of;
 }
 
 int size_of(std::monostate const &)
@@ -422,7 +429,7 @@ int align_of(ILType const &type)
     return std::visit([](auto const &t) -> int {
         return align_of(t);
     },
-        type);
+        type.inner);
 }
 
 int size_of(ILType const &type)
@@ -430,7 +437,7 @@ int size_of(ILType const &type)
     return std::visit([](auto const &t) -> int {
         return size_of(t);
     },
-        type);
+        type.inner);
 }
 
 std::wostream &operator<<(std::wostream &os, ILBaseType const &type)
@@ -449,33 +456,18 @@ std::wostream &operator<<(std::wostream &os, ILBaseType const &type)
     return os;
 }
 
-std::wostream &operator<<(std::wostream &os, ILStructType const &type)
+std::wostream &operator<<(std::wostream &os, ILType::ILAggregate const &aggregate)
 {
-    os << type.name << " {";
-    auto first { true };
-    for (auto fld : type.layout) {
-        if (first) {
-            os << ',';
-        }
-        os << fld;
-    }
-    os << '}';
-    return os;
+    return os << aggregate.name;
 }
 
 std::wostream &operator<<(std::wostream &os, ILType const &type)
 {
     std::visit(
-        overloads {
-            [](std::monostate const &) {
-            },
-            [&os](ILBaseType const &inner) {
-                os << inner;
-            },
-            [&os](ILStructType const &inner) {
-                os << inner.name;
-            } },
-        type);
+        [&os](auto const &i) {
+            os << i;
+        },
+        type.inner);
     return os;
 }
 
@@ -535,7 +527,7 @@ std::wostream &operator<<(std::wostream &os, ILValue const &value)
                         [](auto const &t) {
                             UNREACHABLE();
                         } },
-                    value.type);
+                    value.type.inner);
                 os << dbl;
             },
             [&os](int64_t const &i) {
@@ -571,7 +563,7 @@ std::wostream &operator<<(std::wostream &os, BlitDef const &impl)
 std::wostream &operator<<(std::wostream &os, CallDef const &impl)
 {
     os << "    ";
-    if (!std::holds_alternative<std::monostate>(impl.target.type)) {
+    if (size_of(impl.target.type) > 0) {
         os << impl.target << " = " << impl.target.type << ' ';
     }
     std::wstring_view n { impl.name };
@@ -596,10 +588,10 @@ std::wostream &operator<<(std::wostream &os, CallDef const &impl)
                             [&os](ILBaseType const &bt) {
                                 os << must_extend(bt);
                             },
-                            [&os](ILStructType const &t) {
+                            [&os](ILType::ILAggregate const &t) {
                                 os << t.name;
                             } },
-                        arg.type);
+                        arg.type.inner);
                 } },
             arg.inner);
         os << " " << arg;
@@ -626,8 +618,8 @@ std::wostream &operator<<(std::wostream &os, CopyDef const &impl)
 std::wostream &operator<<(std::wostream &os, ExprDef const &impl)
 {
     std::wstringstream op;
-    assert(std::holds_alternative<ILBaseType>(impl.target.type));
-    auto t = std::get<ILBaseType>(impl.target.type);
+    assert(std::holds_alternative<ILBaseType>(impl.target.type.inner));
+    auto t = std::get<ILBaseType>(impl.target.type.inner);
     if (impl.op >= ILOperation::Equals) {
         op << 'c';
         if (impl.op >= ILOperation::GreaterEqual) {
@@ -656,12 +648,13 @@ std::wostream &operator<<(std::wostream &os, ExprDef const &impl)
 
 std::wostream &operator<<(std::wostream &os, ExtDef const &impl)
 {
+    auto t { get<ILBaseType>(impl.source.type.inner) };
     os << "    "
        << impl.target
        << " = "
        << targettype(impl.target.type)
        << " ext"
-       << get<ILBaseType>(impl.source.type)
+       << ((t == ILBaseType::W) ? ILBaseType::SW : t)
        << " "
        << impl.source;
     return os;
@@ -781,35 +774,72 @@ std::wostream &operator<<(std::wostream &os, ILFunction const &function)
     return os;
 }
 
-void emit_aggregate(pType const &type, std::wostream &os)
+std::wstring type_ref(pType const &type)
 {
-    ILType il_type = qbe_type(type);
-    if (std::holds_alternative<ILStructType>(il_type)) {
-        auto const &strukt { std::get<ILStructType>(il_type) };
-        assert(!strukt.layout.empty());
-        os << "type " << strukt.name << " = ";
-        auto first { true };
-        for (auto component : strukt.layout) {
-            auto ch = (first) ? '{' : ',';
-            os << ch << ' ';
-            first = false;
-            os << component;
-        }
-        os << " }\n";
+    if (std::holds_alternative<SliceType>(type->description)) {
+        return L":slice_t";
+    }
+    if (auto prefix = std::visit(
+            overloads {
+                [](OptionalType const &) -> wchar_t const * {
+                    return L"opt";
+                },
+                [](StructType const &) -> wchar_t const * {
+                    return L"struct";
+                },
+                [](ResultType const &) -> wchar_t const * {
+                    return L"res";
+                },
+                [&type](auto const &) -> wchar_t const * {
+                    return nullptr;
+                } },
+            type->description);
+        prefix != nullptr) {
+        return std::format(L":{}{}", prefix, *(type.id));
+    } else {
+        auto t { qbe_type(type) };
+        assert(std::holds_alternative<ILBaseType>(t.inner));
+        std::wostringstream ss;
+        ss << t;
+        return ss.str();
     }
 }
 
 void emit_type(pType const &type, std::wostream &os)
 {
-    emit_aggregate(type, os);
     std::visit(
         overloads {
-            [&os, &type](ReferenceType const &ref) {
-                if (!qbe_first_class_type(ref.referencing)) {
-                    emit_type(ref.referencing, os);
-                }
+            [&os, &type](SliceType const &opt) {
+                os << "type :slice_t = { l, l }\n";
             },
-            [](auto const &) {
+            [&os, &type](OptionalType const &opt) {
+                os << "type "
+                   << type_ref(type) << " = { "
+                   << type_ref(opt.type) << ", b }\n";
+            },
+            [&os, &type](StructType const &strukt) {
+                os << L"type " << type_ref(type) << " = { ";
+                auto s = flatten_type(type);
+                auto first { true };
+                for (auto const c : s) {
+                    if (!first) {
+                        os << ", ";
+                    }
+                    first = false;
+                    os << c;
+                }
+                os << " }\n";
+            },
+            [&os, &type](ResultType const &result) {
+                os << "type "
+                   << type_ref(type) << "_union = { { "
+                   << type_ref(result.success) << " } { "
+                   << type_ref(result.error) << " } }\n";
+                os << "type "
+                   << type_ref(type) << " = { "
+                   << type_ref(type) << "_union, b }\n";
+            },
+            [&os, &type](auto const &) {
             } },
         type->description);
 }

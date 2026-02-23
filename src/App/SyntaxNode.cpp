@@ -294,11 +294,6 @@ Continue::Continue(Label label)
 {
 }
 
-Error::Error(ASTNode expression)
-    : expression(std::move(expression))
-{
-}
-
 Return::Return(ASTNode expression)
     : expression(std::move(expression))
 {

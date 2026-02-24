@@ -665,6 +665,36 @@ ExecutionResult execute_qbe(VM &vm, ILFile const &file, ILFunction const &functi
             trace(L"Set global {}.{} = {}", file.id, n, val);
         }
     }
+    std::ranges::for_each(
+        file.enumerations | std::views::enumerate,
+        [&vm, &file](auto const &tuple) {
+            auto const &[ix, enum_type] = tuple;
+            auto            n = std::format(L"enum$_{}", ix + 1);
+            QBEValue        val { vm.data.data() + vm.data_pointer };
+            EnumType const &e = get<EnumType>(enum_type);
+            *((uint64_t *) (vm.data.data() + vm.data_pointer)) = e.values.size();
+            vm.data_pointer += sizeof(uint64_t);
+            std::ranges::for_each(
+                e.values,
+                [&vm](EnumType::Value const &v) {
+                    *((uint64_t *) (vm.data.data() + vm.data_pointer)) = v.value;
+                    vm.data_pointer += sizeof(uint64_t);
+                    *((uint64_t *) (vm.data.data() + vm.data_pointer)) = v.label.length();
+                    vm.data_pointer += sizeof(uint64_t);
+                });
+            std::ranges::for_each(
+                e.values,
+                [&vm](EnumType::Value const &v) {
+                    for (auto ch : v.label) {
+                        *((wchar_t *) (vm.data.data() + vm.data_pointer)) = ch;
+                        vm.data_pointer += sizeof(wchar_t);
+                    }
+                    *((wchar_t *) (vm.data.data() + vm.data_pointer)) = 0;
+                    vm.data_pointer += sizeof(wchar_t);
+                });
+            vm.globals[file.id][n] = val;
+            trace(L"Set global {}.{} = {}", file.id, n, val);
+        });
     QBEValue base_pointer { vm.stack.data() + vm.stack_pointer };
     while (true) {
         trace(L"function `{}`[{}] ip {}", function.name, function.instructions.size(), frame->ip);

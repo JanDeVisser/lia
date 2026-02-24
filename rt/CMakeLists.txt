@@ -13,6 +13,7 @@ add_library(
         liart
         STATIC SHARED
         dynarr.c
+        meta.c
         puts.c
         utf8.c
 )

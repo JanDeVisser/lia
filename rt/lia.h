@@ -32,6 +32,14 @@ typedef struct array {
     int64_t size;
 } array_t;
 
+typedef struct enum_def {
+    uint64_t num_values;
+    struct {
+        uint64_t value;
+        int64_t  tag_len;
+    } values[];
+} enum_def_t;
+
 size_t dynarr_append(dynarr_t *arr, slice_t const slice, size_t elem_size);
 void   dynarr_clear(dynarr_t *arr);
 void   dynarr_free(dynarr_t *arr);
@@ -55,6 +63,7 @@ extern size_t lia$eputln(wchar_t const *ptr, uint64_t len);
 extern void   lia$abort(wchar_t const *ptr, uint64_t len);
 extern size_t lia$putint(int64_t i);
 extern size_t lia$putuint(uint64_t i);
+extern int    lia$enum_tag(enum_def_t *enum_def, uint64_t value, slice_t *ret);
 
 #define ALIGNAT(bytes, align) ((bytes + (align - 1)) & ~(align - 1))
 #define AS_SLICE(dynarr) (*(slice_t *) (&dynarr))

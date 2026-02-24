@@ -1,0 +1,14 @@
+enum X: u64 {
+    First = 12,
+    Second = 42,
+    Another = 69,
+    YetAnother = 420,
+    Last = 69420,
+}
+
+public func main() i32 {
+    y := X.Another;
+    putln(#y)
+    return 0::i32
+}
+

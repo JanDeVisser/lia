@@ -21,5 +21,6 @@
   "20_enum",
   "21_opt_or",
   "22_for_loop",
-  "23_return_result"
+  "23_return_result",
+  "24_enum_tag"
 ]

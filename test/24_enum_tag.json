@@ -1,0 +1,11 @@
+{
+  "name": "24_enum_tag",
+  "comptime_stdout": [],
+  "comptime_stderr": [],
+  "stdout": [
+    "Another"
+  ],
+  "stderr": [],
+  "exit": 0,
+  "args": []
+}

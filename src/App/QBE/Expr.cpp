@@ -551,6 +551,34 @@ GenResult qbe_operator(QBEUnaryExpr const &expr, BoolType const &bool_type, QBEC
 }
 
 template<>
+GenResult qbe_operator(QBEUnaryExpr const &expr, EnumType const &enum_type, QBEContext &ctx)
+{
+    auto operand = TRY_DEREFERENCE(expr.operand, ctx).get_value();
+    if (expr.op == Operator::Length) {
+        auto enum_def { ctx.add_enumeration(expr.operand.ptype) };
+        auto tag_buffer { ILValue::local(++ctx.next_var, ILBaseType::L) };
+        auto ret_val = ILValue::local(++ctx.next_var, ILBaseType::W);
+        ctx.add_operation(
+            AllocDef {
+                16,
+                16,
+                tag_buffer,
+            });
+        CallDef call_def = {
+            L"libliart:lia$enum_tag",
+            ret_val,
+        };
+        call_def.args.push_back(enum_def);
+        call_def.args.push_back(operand);
+        call_def.args.push_back(tag_buffer);
+        ctx.add_operation(call_def);
+        tag_buffer.type = ctx.qbe_type(TypeRegistry::string);
+        return QBEOperand { expr.node, tag_buffer };
+    }
+    NYI("QBE mapping for enum operator `{}`", Operator_name(expr.op));
+}
+
+template<>
 GenResult qbe_operator(QBEUnaryExpr const &expr, IntType const &int_type, QBEContext &ctx)
 {
     auto operand = TRY_DEREFERENCE(expr.operand, ctx);

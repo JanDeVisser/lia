@@ -869,6 +869,35 @@ std::wostream &operator<<(std::wostream &os, ILFile const &file)
         }
         os << L"b 0 }\n";
     }
+    if (!file.enumerations.empty()) {
+        os << '\n';
+        std::ranges::for_each(
+            file.enumerations | std::views::enumerate,
+            [&os](auto const &tuple) {
+                auto const &[enum_id, enum_type] = tuple;
+                assert(std::holds_alternative<EnumType>(enum_type->description));
+                auto const &e { std::get<EnumType>(enum_type->description) };
+                os << "data $enum$_" << enum_id + 1 << " = { l " << e.values.size() << ", ";
+                std::ranges::for_each(
+                    e.values,
+                    [&os](EnumType::Value const &v) {
+                        os << "l " << v.value << ", l " << v.label.length() << ", ";
+                    });
+                std::ranges::for_each(
+                    e.values | std::views::enumerate,
+                    [&os](auto const &tuple) {
+                        auto &[ix, v] = tuple;
+                        if (ix > 0) {
+                            os << ", ";
+                        }
+                        for (auto ch : v.label) {
+                            os << std::format(L"w {:d}, ", ch);
+                        }
+                        os << "w 0";
+                    });
+                os << " }\n";
+            });
+    }
     return os;
 }
 

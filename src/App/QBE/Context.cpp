@@ -37,6 +37,21 @@ ILValue QBEContext::add_cstring(std::string_view s)
     return ILValue::cstring(file.cstrings.size());
 }
 
+ILValue QBEContext::add_enumeration(pType const &enum_type)
+{
+    auto &file { program.files[current_file] };
+    auto  found { false };
+    for (auto const &[ix, e] : std::ranges::views::enumerate(file.enumerations)) {
+        if (e == enum_type) {
+            return ILValue::global(std::format(L"enum$_{}", ix + 1), ILBaseType::L);
+        }
+    }
+    if (!found) {
+        file.enumerations.emplace_back(enum_type);
+    }
+    return ILValue::global(std::format(L"enum$_{}", file.enumerations.size()), ILBaseType::L);
+}
+
 ILType QBEContext::qbe_type(pType const &type)
 {
     std::visit(

@@ -598,6 +598,7 @@ struct ILFile {
     std::wstring              name;
     size_t                    id;
     std::vector<pType>        types;
+    std::vector<pType>        enumerations;
     std::vector<std::wstring> strings;
     std::vector<std::string>  cstrings;
     std::vector<ILFunction>   functions;
@@ -723,6 +724,7 @@ struct QBEContext {
 
     ILValue                  add_string(std::wstring_view s);
     ILValue                  add_cstring(std::string_view s);
+    ILValue                  add_enumeration(pType const &enum_type);
     ILType                   qbe_type(pType const &type);
     void                     add_operation(ILInstructionImpl impl);
     std::optional<ILBinding> find(std::wstring_view name);

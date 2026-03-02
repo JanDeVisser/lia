@@ -237,17 +237,7 @@ struct Builder {
 
     bool bind()
     {
-        parser.pass = 0;
-        parser.unbound = std::numeric_limits<int>::max();
-        int        prev_pass;
-        BindResult s;
-        do {
-            prev_pass = parser.unbound;
-            parser.unbound = 0;
-            parser.unbound_nodes.clear();
-            s = Lia::bind(parser.program);
-            ++parser.pass;
-        } while (!s.has_value() && parser.unbound < prev_pass);
+        auto s = parser.bind();
         if (!s.has_value()) {
             info("Second phase of semantic analysis failed after {} pass(es)", parser.pass);
             if (!parser.errors.empty()) {

@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <optional>
-#include <ranges>
 #include <string_view>
 
 #include <Util/Defer.h>
@@ -28,7 +27,8 @@ using namespace Util;
 std::vector<Parser::OperatorDef> Parser::operators {
     { Operator::Add, '+', 11 },
     { Operator::AddressOf, '&', 14, Position::Prefix, Associativity::Right },
-    { Operator::Assign, '=', 1, Position::Infix, Associativity::Right },
+    { Operator::Apply, LiaKeyword::Apply, 2 },
+    { Operator::Assign, '=', 2, Position::Infix, Associativity::Right },
     { Operator::AssignAnd, LiaKeyword::AssignAnd, 1, Position::Infix, Associativity::Right },
     { Operator::AssignDecrement, LiaKeyword::AssignDecrement, 1, Position::Infix, Associativity::Right },
     { Operator::AssignDivide, LiaKeyword::AssignDivide, 1, Position::Infix, Associativity::Right },
@@ -99,6 +99,32 @@ static BindingPower binding_power(Parser::OperatorDef op)
 
 Parser::Parser()
 {
+}
+
+size_t Parser::size() const
+{
+    return nodes.size();
+}
+
+bool Parser::empty() const
+{
+    return nodes.empty();
+}
+
+ASTNodeImpl const &Parser::operator[](size_t ix) const
+{
+    while (nodes[ix].superceded_by != nullptr) {
+        ix = nodes[ix].superceded_by.id.value();
+    }
+    return nodes[ix];
+}
+
+ASTNodeImpl &Parser::operator[](size_t ix)
+{
+    while (nodes[ix].superceded_by != nullptr) {
+        ix = nodes[ix].superceded_by.id.value();
+    }
+    return nodes[ix];
 }
 
 Parser::Token Parser::parse_statements(ASTNodes &statements)
@@ -800,14 +826,10 @@ ASTNode Parser::parse_enum()
             return {};
         }
         ASTNode payload { nullptr };
-        if (lexer.accept_symbol('(')) {
+        if (lexer.accept_symbol(':')) {
             payload = parse_type();
             if (payload == nullptr) {
                 append(lexer.last_location, "Expected enum value payload type");
-                return {};
-            }
-            if (auto err = lexer.expect_symbol(')'); !err.has_value()) {
-                append(lexer.last_location, "Expected `)` to close enum value payload type");
                 return {};
             }
         }
@@ -1280,33 +1302,25 @@ ASTNode Parser::parse_yield()
     }
 }
 
-ASTStatus Parser::bind(ASTNode node)
+BindResult Parser::bind(ASTNode node)
 {
+    auto node_was_program { false };
     if (node == nullptr) {
         node = program;
     }
     assert(node != nullptr);
-    node = node.hunt();
     pass = 0;
     unbound = std::numeric_limits<int>::max();
-    int prev_pass;
+    int        prev_pass;
+    BindResult s;
     do {
         prev_pass = unbound;
         unbound = 0;
         unbound_nodes.clear();
-        auto res = Lia::bind(node);
-        node = node.hunt();
-        if (res.has_value()) {
-            if (node->bound_type) {
-                break;
-            }
-        } else {
-            return res.error();
-        }
+        s = Lia::bind(node);
         ++pass;
-    } while (unbound > 0 && unbound < prev_pass);
-    program = program.hunt();
-    return node->status;
+    } while (!s.has_value() && unbound < prev_pass);
+    return s;
 }
 
 pType Parser::type_of(std::wstring const &name) const
@@ -1484,6 +1498,12 @@ void Parser::append(TokenLocation location, char const *message)
     append(std::move(location), MUST_EVAL(to_wstring(message)));
 }
 
+BindError Parser::bind_error(LiaError const &error)
+{
+    errors.emplace_back(error);
+    return BindError { ASTStatus::BindErrors };
+}
+
 BindError Parser::bind_error(TokenLocation location, std::wstring const &msg)
 {
     append(location, msg);
@@ -1495,5 +1515,4 @@ BindError Parser::bind_error(TokenLocation location, std::string const &msg)
     append(location, msg);
     return BindError { ASTStatus::BindErrors };
 }
-
 }

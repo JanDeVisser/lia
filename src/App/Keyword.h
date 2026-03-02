@@ -18,6 +18,7 @@ using namespace Util;
 using Precedence = uint16_t;
 
 #define LiaKeywords(S)         \
+    S(Apply, "=>")             \
     S(AssignAnd, "&=")         \
     S(AssignDecrement, "-=")   \
     S(AssignDivide, "/=")      \

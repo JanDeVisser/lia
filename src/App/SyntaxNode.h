@@ -61,6 +61,7 @@ using namespace Util;
     S(StampedIdentifier)   \
     S(Struct)              \
     S(StructMember)        \
+    S(TagValue)            \
     S(TypeSpecification)   \
     S(UnaryExpression)     \
     S(VariableDeclaration) \
@@ -114,13 +115,12 @@ struct ASTNode : public Ptr<struct ASTNodeImpl, Parser> {
     {
     }
 
-    ASTNode const &hunt() const;
-    TokenLocation  operator+(ASTNode const &other);
-    TokenLocation  operator+(TokenLocation const &other);
-    void           error(char const *message) const { error(std::string(message)); }
-    void           error(wchar_t const *message) const { error(std::wstring(message)); }
-    void           error(std::wstring const &message) const;
-    void           error(std::string const &message) const;
+    TokenLocation operator+(ASTNode const &other);
+    TokenLocation operator+(TokenLocation const &other);
+    void          error(char const *message) const { error(std::string(message)); }
+    void          error(wchar_t const *message) const { error(std::wstring(message)); }
+    void          error(std::wstring const &message) const;
+    void          error(std::string const &message) const;
 
     template<typename... Args>
     void error(std::format_string<Args...> const message, Args &&...args) const
@@ -417,6 +417,15 @@ struct Struct {
     Struct(std::wstring name, ASTNodes members);
 };
 
+struct TagValue {
+    int64_t      tag_value;
+    std::wstring label;
+    pType        payload_type;
+    ASTNode      payload;
+
+    TagValue(int64_t tag_value, std::wstring label, pType payload_type, ASTNode payload);
+};
+
 struct TypeNameNode {
     std::wstring name;
     ASTNodes     arguments {};
@@ -561,6 +570,7 @@ using SyntaxNode = std::variant<Dummy,
     StampedIdentifier,
     Struct,
     StructMember,
+    TagValue,
     TypeSpecification,
     UnaryExpression,
     VariableDeclaration,
@@ -569,6 +579,7 @@ using SyntaxNode = std::variant<Dummy,
     Yield>;
 
 struct ASTNodeImpl {
+    using NodeTag = std::variant<bool, int64_t, std::wstring, pType, ASTNode>;
     TokenLocation            location {};
     ASTStatus                status { ASTStatus::Initialized };
     SyntaxNode               node {};
@@ -577,6 +588,7 @@ struct ASTNodeImpl {
     ASTNode                  id;
     ASTNode                  supercedes;
     ASTNode                  superceded_by;
+    NodeTag                  tag { false };
 
     template<class N, typename... Args>
     static ASTNodeImpl make(TokenLocation const &loc, Args... args)

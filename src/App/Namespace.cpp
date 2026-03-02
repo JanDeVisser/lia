@@ -18,15 +18,7 @@ Namespace::Namespace(ASTNode parent)
 
 ASTNode Namespace::parent_of() const
 {
-    if (parent == nullptr) {
-        return nullptr;
-    }
-    ASTNode p = parent;
-    while (p->superceded_by != nullptr) {
-        p = p->superceded_by;
-    }
-    assert(p->ns);
-    return p;
+    return parent;
 }
 
 bool Namespace::is_registered(std::wstring const &name) const
@@ -78,7 +70,7 @@ bool Namespace::has_type(std::wstring const &name) const
 ASTNode Namespace::find_variable(std::wstring const &name) const
 {
     if (variables.contains(name)) {
-        return variables.at(name).hunt();
+        return variables.at(name);
     }
     if (auto p = parent_of(); p != nullptr) {
         assert(p->ns);
@@ -124,10 +116,9 @@ ASTNode Namespace::find_function_here(std::wstring name, pType const &type) cons
     }
     auto overloads = functions.at(name);
     for (auto const &function : overloads) {
-        auto        n { function.hunt() };
-        auto const &def = get<FunctionDefinition>(n);
+        auto const &def = get<FunctionDefinition>(function);
         if (def.declaration->bound_type == type) {
-            return n;
+            return function;
         }
     }
     return nullptr;
@@ -153,15 +144,14 @@ ASTNode Namespace::find_function_by_arg_list(std::wstring const &name, pType con
     if (functions.contains(name)) {
         auto const &overloads = functions.at(name);
         for (auto const &overload : overloads) {
-            auto        n = overload.hunt();
-            auto const &def = get<FunctionDefinition>(n);
+            auto const &def = get<FunctionDefinition>(overload);
             auto const &func_type = def.declaration->bound_type;
             if (!is<FunctionType>(func_type)) {
                 continue;
             }
             auto const &func_type_descr = std::get<FunctionType>(func_type->description);
             if (func_type_descr.parameters == type_descr.types) {
-                return n;
+                return overload;
             }
         }
     }
@@ -179,8 +169,8 @@ ASTNodes Namespace::find_overloads(std::wstring const &name, ASTNodes const &typ
         if (ns.functions.contains(name)) {
             auto const &overloads_of = ns.functions.at(name);
             for (auto const &overload : overloads_of) {
-                if (auto const &func_def = overload.hunt(); get<FunctionDeclaration>(get<FunctionDefinition>(func_def).declaration).generics.size() >= type_args.size()) {
-                    overloads.push_back(func_def);
+                if (get<FunctionDeclaration>(get<FunctionDefinition>(overload).declaration).generics.size() >= type_args.size()) {
+                    overloads.push_back(overload);
                 }
             }
         }
@@ -204,12 +194,11 @@ void Namespace::register_function(std::wstring name, ASTNode fnc)
 void Namespace::unregister_function(std::wstring name, ASTNode const &fnc)
 {
     assert(is<FunctionType>(fnc->bound_type));
-    auto hunted = fnc.hunt();
     if (functions.contains(name)) {
         auto &overloads { functions.at(name) };
         for (auto it = overloads.begin(); it != overloads.end(); ++it) {
-            auto &f = (*it).hunt();
-            if (f->bound_type == hunted->bound_type) {
+            auto &f = *it;
+            if (f->bound_type == fnc->bound_type) {
                 overloads.erase(it);
                 return;
             }

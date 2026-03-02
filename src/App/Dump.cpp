@@ -173,6 +173,14 @@ void dump(ASTNode const &n, Struct const &impl, std::wostream &os, int indent)
 }
 
 template<>
+void dump(ASTNode const &n, TagValue const &impl, std::wostream &os, int indent)
+{
+    if (impl.payload) {
+        dump(impl.payload, os, indent + 4);
+    }
+}
+
+template<>
 void dump(ASTNode const &n, UnaryExpression const &impl, std::wostream &os, int indent)
 {
     dump(impl.operand, os, indent + 4);
@@ -351,6 +359,12 @@ std::wstring to_string(ASTNode const &, StructMember const &impl)
 }
 
 template<>
+std::wstring to_string(ASTNode const &, TagValue const &impl)
+{
+    return std::format(L"{}={}", impl.label, impl.tag_value);
+}
+
+template<>
 std::wstring to_string(ASTNode const &n, TypeSpecification const &impl)
 {
     return std::visit(
@@ -422,7 +436,7 @@ std::wstring to_string(ASTNode const &node)
         },
         node->node);
     if (node->bound_type != nullptr) {
-        os << " -> " << node->bound_type;
+        os << " -> " << node->bound_type->name;
     }
     os << " ";
     switch (node->status) {
@@ -484,14 +498,20 @@ void dump(ASTNode const &node, std::wostream &os, int indent)
                 os << n;
                 auto const def = get<FunctionDefinition>(f);
                 if (def.declaration->bound_type) {
-                    os << ": " << def.declaration->bound_type->to_string();
+                    os << ": " << def.declaration->bound_type->name;
                 }
                 os << "\n";
             }
         }
         for (auto const &[n, v] : node->ns->variables) {
             print_indent(os, indent + 4);
-            os << n << ": " << v->bound_type->to_string() << "\n";
+            os << n;
+            if (v->bound_type != nullptr) {
+                os << ": " << v->bound_type->name;
+            } else {
+                os << "(unbound)";
+            }
+            os << "\n";
         }
         print_indent(os, indent);
         os << "}" << std::endl;

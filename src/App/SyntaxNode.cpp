@@ -40,17 +40,6 @@ char const *SyntaxNodeType_name(SyntaxNodeType type)
     }
 }
 
-ASTNode const &ASTNode::hunt() const
-{
-    if (*this == nullptr) {
-        return *this;
-    }
-    if ((*this)->superceded_by == nullptr) {
-        return *this;
-    }
-    return (*this)->superceded_by.hunt();
-}
-
 TokenLocation ASTNode::operator+(ASTNode const &other)
 {
     assert(*this && other);
@@ -315,6 +304,14 @@ StructMember::StructMember(std::wstring label, ASTNode type)
 Struct::Struct(std::wstring name, ASTNodes members)
     : name(std::move(name))
     , members(std::move(members))
+{
+}
+
+TagValue::TagValue(int64_t tag_value, std::wstring label, pType payload_type, ASTNode payload)
+    : tag_value(tag_value)
+    , label(std::move(label))
+    , payload_type(std::move(payload_type))
+    , payload(std::move(payload))
 {
 }
 

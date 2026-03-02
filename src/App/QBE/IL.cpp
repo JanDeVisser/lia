@@ -199,6 +199,20 @@ void flatten_type(EnumType const &enum_type, ILLayout &layout)
     flatten_type(enum_type.underlying_type, layout);
 }
 
+void flatten_type(TaggedUnionType const &tagged_union, ILLayout &layout)
+{
+    pType largest { TypeRegistry::void_ };
+    std::ranges::for_each(
+        tagged_union.tags,
+        [&largest](auto const &tag) {
+            if (tag.payload->size_of() > largest->size_of()) {
+                largest = tag.payload;
+            }
+        });
+    flatten_type(largest, layout);
+    flatten_type(tagged_union.tag_type, layout);
+}
+
 void flatten_type(FloatType const &flt_type, ILLayout &layout)
 {
     layout.emplace_back(qbe_type_code(flt_type));
@@ -242,6 +256,10 @@ void flatten_type(ResultType const &result, ILLayout &layout)
 {
     layout.emplace_back(ILBaseType::W);
     flatten_type((result.success->size_of() > result.error->size_of()) ? result.success : result.error);
+}
+
+void flatten_type(VoidType const &, ILLayout &)
+{
 }
 
 void flatten_type(auto const &descr, std::vector<ILBaseType> &)

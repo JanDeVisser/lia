@@ -334,9 +334,12 @@ struct EnumType {
     pType  underlying_type;
     Values values;
 
-    std::wstring to_string() const;
-    intptr_t     size_of() const;
-    intptr_t     align_of() const;
+    std::wstring           to_string() const;
+    intptr_t               size_of() const;
+    intptr_t               align_of() const;
+    bool                   is_valid(std::wstring_view label) const;
+    std::optional<int64_t> value_for(std::wstring_view label) const;
+    pType                  underlying() const;
 };
 
 struct TaggedUnionType {
@@ -349,10 +352,19 @@ struct TaggedUnionType {
     pType tag_type;
     Tags  tags;
 
-    std::wstring to_string() const;
-    intptr_t     size_of() const;
-    intptr_t     align_of() const;
+    std::wstring           to_string() const;
+    intptr_t               size_of() const;
+    intptr_t               align_of() const;
+    bool                   is_valid(std::wstring_view label) const;
+    std::optional<int64_t> value_for(std::wstring_view label) const;
+    pType                  payload_for(std::wstring_view label) const;
+    pType                  payload_for(int64_t tag) const;
+    pType                  underlying() const;
+    intptr_t               tag_offset() const;
 };
+
+template<class S>
+concept enumerated_type = std::is_same_v<S, EnumType> || std::is_same_v<S, TaggedUnionType>;
 
 struct StructType {
     struct Field {

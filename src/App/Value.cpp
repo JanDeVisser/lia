@@ -277,6 +277,11 @@ Atom evaluate_AddressOf(Atom const &lhs, Atom const &rhs)
     fatal("Cannot take address of an atom");
 }
 
+Atom evaluate_Apply(Atom const &lhs, Atom const &rhs)
+{
+    fatal("Cannot Apply a value");
+}
+
 Atom evaluate_Call(Atom const &lhs, Atom const &rhs)
 {
     fatal("Cannot call a value");

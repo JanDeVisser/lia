@@ -74,7 +74,8 @@ ASTNode normalize(ASTNode n, BinaryExpression const &impl)
             arg_list = make_node<ExpressionList>(arg_list, ASTNodes {});
         }
         if (!is<ExpressionList>(arg_list)) {
-            arg_list = make_node<ExpressionList>(arg_list, ASTNodes { arg_list });
+            auto &parser { *(arg_list.repo) };
+            arg_list = parser.make_node<ExpressionList>(ASTNodes { arg_list });
         }
         assert(is<ExpressionList>(arg_list));
         arg_list = normalize(arg_list);
@@ -190,13 +191,7 @@ ASTNode normalize(ASTNode n, Enum const &impl)
 template<>
 ASTNode normalize(ASTNode n, ExpressionList const &impl)
 {
-    for (auto const &expr : impl.expressions) {
-        assert(expr->status == ASTStatus::Normalized);
-        if (expr->superceded_by == n) {
-            expr->superceded_by = nullptr;
-        }
-    }
-    return n;
+    return make_node<ExpressionList>(n, normalize(impl.expressions));
 }
 
 template<>
@@ -466,18 +461,15 @@ ASTNode normalize(ASTNode n, UnaryExpression const &impl)
             }
         }
     }
-    return make_node<UnaryExpression>(n, impl.op, normalized_operand);
+    return n;
 }
 
 template<>
 ASTNode normalize(ASTNode n, VariableDeclaration const &impl)
 {
-    return make_node<VariableDeclaration>(
-        n,
-        impl.name,
-        normalize(impl.type_name),
-        normalize(impl.initializer),
-        impl.is_const);
+    normalize(impl.type_name);
+    normalize(impl.initializer);
+    return n;
 }
 
 template<>
@@ -506,9 +498,10 @@ ASTNode normalize(ASTNode node)
             node->id.repo->push_namespace(node);
         }
         char const *t = SyntaxNodeType_name(node->type());
-        ret = std::visit([&node](auto impl) {
-            return normalize(node, impl);
-        },
+        ret = std::visit(
+            [&node](auto impl) {
+                return normalize(node, impl);
+            },
             node->node);
         if (ret->ns.has_value()) {
             ret.repo->pop_namespace();
@@ -524,12 +517,14 @@ ASTNode normalize(ASTNode node)
 ASTNodes normalize(ASTNodes nodes)
 {
     ASTNodes normalized {};
-    for (size_t ix = 0; ix < nodes.size(); ++ix) {
-        auto ret = normalize(nodes[ix]);
-        if (ret != nullptr) {
-            normalized.push_back(ret);
-        }
-    }
+    std::ranges::for_each(
+        nodes,
+        [&normalized](auto const &n) {
+            auto ret = normalize(n);
+            if (ret != nullptr) {
+                normalized.push_back(ret);
+            }
+        });
     return normalized;
 }
 

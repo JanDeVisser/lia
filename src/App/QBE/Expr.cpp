@@ -495,6 +495,11 @@ GenResult qbe_operator(QBEBinExpr const &expr, EnumType const &lhs, TypeType con
     NYI("QBE mapping for type operator `{}`", Operator_name(expr.op));
 }
 
+GenResult qbe_operator(QBEBinExpr const &expr, TaggedUnionType const &lhs, auto const &rhs, QBEContext &ctx)
+{
+    NYI("QBE mapping for type operator `{}` (any)", Operator_name(expr.op));
+}
+
 GenResult qbe_operator(QBEBinExpr const &expr, QBEContext &ctx)
 {
     auto const &lhs_value_type = expr.lhs.node->bound_type->value_type();

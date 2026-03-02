@@ -123,6 +123,11 @@ QBEValue evaluate_AddressOf(QBEValue const &lhs, QBEValue const &rhs)
     fatal("Cannot take address of an value");
 }
 
+QBEValue evaluate_Apply(QBEValue const &lhs, QBEValue const &rhs)
+{
+    fatal("Cannot Apply an value");
+}
+
 QBEValue evaluate_Call(QBEValue const &lhs, QBEValue const &rhs)
 {
     fatal("Cannot call a value");

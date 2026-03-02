@@ -34,7 +34,6 @@ namespace Lia {
         {                                             \
             auto      &__m = (m);                     \
             auto const __maybe = bind(__m);           \
-            __m = __m.hunt();                         \
             if (!__maybe.has_value()) {               \
                 return BindError { __maybe.error() }; \
             }                                         \
@@ -169,30 +168,53 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
 
     if (impl.op == Operator::MemberAccess) {
         if (lhs_type->kind() == TypeKind::TypeType) {
-            auto  enum_type = std::get<TypeType>(lhs_type->description).type;
-            auto *enum_descr = get_if<EnumType>(enum_type);
-            if (enum_descr == nullptr) {
-                return parser.bind_error(impl.lhs->location,
-                    L"A type in the left-hand side of a member access must be an `enum` type");
-            }
+            auto type_type = get<TypeType>(lhs_type).type;
             if (!is<Identifier>(impl.rhs)) {
                 return parser.bind_error(impl.rhs->location,
                     L"The right-hand side of a member access must be an identifier");
             }
-            auto find_value = [&enum_descr, &parser, &impl](std::wstring_view const label) -> std::expected<EnumType::Value, std::wstring> {
-                for (auto const &value : enum_descr->values) {
-                    if (value.label == label) {
-                        return value;
-                    }
-                }
-                return std::unexpected(std::format(L"Unknown enum value `{}`", label));
+            auto const &label = get<Identifier>(impl.rhs).identifier;
+            if (auto res = std::visit(
+                    overloads {
+                        [&label, &impl, &n, &parser, &type_type](TaggedUnionType const &t) -> std::expected<ASTNode, LiaError> {
+                            if (auto v = t.value_for(label); v) {
+                                auto ret = make_node<TagValue>(n, static_cast<int64_t>(*v), label, t.payload_for(label), nullptr);
+                                ret->bound_type = type_type;
+                                ret->status = ASTStatus::Bound;
+                                return ret;
+                            }
+                            return std::unexpected(
+                                LiaError {
+                                    impl.rhs->location,
+                                    std::format(L"Unknown enum value `{}`", label),
+                                });
+                        },
+                        [&label, &impl, &n, &parser, &type_type](EnumType const &t) -> std::expected<ASTNode, LiaError> {
+                            if (auto v = t.value_for(label); v) {
+                                auto ret = make_node<TagValue>(n, static_cast<int64_t>(*v), label, nullptr, nullptr);
+                                ret->bound_type = type_type;
+                                ret->status = ASTStatus::Bound;
+                                return ret;
+                            }
+                            return std::unexpected(
+                                LiaError {
+                                    impl.rhs->location,
+                                    std::format(L"Unknown enum value `{}`", label),
+                                });
+                        },
+                        [&impl](auto const &) -> std::expected<ASTNode, LiaError> {
+                            return std::unexpected(
+                                LiaError {
+                                    impl.lhs->location,
+                                    L"A type in the left-hand side of a member access must be an `enum` type",
+                                });
+                        } },
+                    type_type->description);
+                !res) {
+                return parser.bind_error(res.error());
+            } else {
+                return type_type;
             };
-            if (auto enum_value = find_value(get<Identifier>(impl.rhs).identifier); !enum_value) {
-                return parser.bind_error(impl.rhs->location, enum_value.error());
-            }
-            impl.rhs->bound_type = TypeRegistry::string;
-            impl.rhs->status = ASTStatus::Bound;
-            return enum_type;
         }
         if (lhs_type->kind() != TypeKind::ReferenceType && !is<Identifier>(impl.lhs)) {
             return parser.bind_error(
@@ -228,6 +250,38 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
     auto rhs_value_type = rhs_type->value_type();
 
     if (impl.op == Operator::Assign) {
+        if (is<TagValue>(impl.lhs)) {
+            if (!is<TaggedUnionType>(lhs_value_type)) {
+                return parser.bind_error(impl.lhs->location, L"Only tagged union values can be assigned a payload");
+            }
+            auto const &tagged_union { get<TaggedUnionType>(lhs_value_type) };
+            auto const &tag_value { get<TagValue>(impl.lhs) };
+            if (tag_value.payload != nullptr) {
+                return parser.bind_error(impl.rhs->location, L"Can only attach one payload to a tagged value");
+            }
+            if (tag_value.payload_type == nullptr || tag_value.payload_type == TypeRegistry::void_) {
+                return parser.bind_error(
+                    n->location,
+                    L"Value `{}` of tagged union type `{}` does not take a payload",
+                    tag_value.label, lhs_value_type->name);
+            }
+
+            if (!tag_value.payload_type->compatible(rhs_value_type)
+                && !rhs_value_type->assignable_to(tag_value.payload_type)) {
+                return parser.bind_error(
+                    n->location,
+                    L"Tagged union value `{}` requires payload of type `{}` instead of `{}`",
+                    tag_value.label, tag_value.payload_type->name, rhs_value_type->name);
+            }
+
+            auto _ = make_node<TagValue>(
+                n,
+                tag_value.tag_value,
+                tag_value.label,
+                tag_value.payload_type,
+                impl.rhs);
+            return lhs_value_type;
+        }
         if (!lhs_value_type->compatible(rhs_value_type) && !rhs_value_type->assignable_to(lhs_value_type)) {
             return parser.bind_error(
                 n->location,
@@ -411,7 +465,7 @@ BindResult bind(ASTNode n, Call &impl)
                     return nullptr;
                 }
                 if (is<ReferenceType>(param_type) && !is<ReferenceType>(arg_type)) {
-                    auto reference = normalize(make_node<UnaryExpression>(arg, Operator::AddressOf, arg));
+                    auto reference = normalize(parser.make_node<UnaryExpression>(Operator::AddressOf, arg));
                     reference_nodes.emplace_back(reference);
                     made_reference_node = true;
                 } else {
@@ -535,28 +589,32 @@ BindResult bind(ASTNode n, Comptime &impl)
 {
     auto &parser = *(n.repo);
     if (n->bound_type == nullptr) {
-        switch (parser.bind(impl.statements)) {
-        case ASTStatus::InternalError:
-            log_error("Internal error(s) encountered during compilation of @comptime block");
-            return nullptr;
-        case ASTStatus::BindErrors:
-        case ASTStatus::Ambiguous: {
-            log_error("Error(s) found during compilation of @comptime block:");
-            for (auto const &err : parser.errors) {
-                log_error(L"{}:{} {}", err.location.line + 1, err.location.column + 1, err.message);
+        if (auto res = parser.bind(impl.statements); !res) {
+            return res;
+        } else {
+            switch (impl.statements->status) {
+            case ASTStatus::InternalError:
+                log_error("Internal error(s) encountered during compilation of @comptime block");
+                return nullptr;
+            case ASTStatus::BindErrors:
+            case ASTStatus::Ambiguous: {
+                log_error("Error(s) found during compilation of @comptime block:");
+                for (auto const &err : parser.errors) {
+                    log_error(L"{}:{} {}", err.location.line + 1, err.location.column + 1, err.message);
+                }
+                return parser.bind_error(n->location, L"Bind error in @comptime block");
             }
-            return parser.bind_error(n->location, L"Bind error in @comptime block");
+            case ASTStatus::Undetermined:
+                return BindError { ASTStatus::Undetermined };
+            case ASTStatus::Initialized:
+            case ASTStatus::Normalized:
+                UNREACHABLE();
+            case ASTStatus::Bound:
+                trace(L"Comptime script bind successful");
+                break;
+            }
+            trace("Bound compile time script");
         }
-        case ASTStatus::Undetermined:
-            return BindError { ASTStatus::Undetermined };
-        case ASTStatus::Initialized:
-        case ASTStatus::Normalized:
-            UNREACHABLE();
-        case ASTStatus::Bound:
-            trace(L"Comptime script bind successful");
-            break;
-        }
-        trace("Bound compile time script");
     }
 
     if (impl.output.empty()) {
@@ -685,7 +743,7 @@ BindResult bind(ASTNode n, Enum &impl)
     }
     TaggedUnionType tagged_union;
     for (auto const &[ix, v] : std::ranges::views::enumerate(impl.values)) {
-        pType payload { nullptr };
+        pType payload { TypeRegistry::void_ };
         auto  tagged_value = get<EnumValue>(v);
         if (tagged_value.payload != nullptr) {
             payload = resolve(tagged_value.payload);
@@ -1053,32 +1111,37 @@ BindResult bind(ASTNode node)
         if (node->ns.has_value()) {
             parser.push_namespace(node);
         }
+        parser.node_stack.emplace_back(node);
         auto retval = std::visit(
             [&node](auto impl) {
+                auto id { node->id.id.value() };
                 // We take the impl by value so we can update the copied
                 // value in the bind but at the same time be able to create
                 // new nodes and potentially move the nodes vector around.
-                // When the bind returns we copy the (updated) copy back
-                // into the node.
                 auto ret = bind(node, impl);
-                node->node = impl;
+
+                // Only copy the impl back if the node is, you know,
+                // still the node and hasn't been superceded in the bind
+                if (id == node->id.id.value()) {
+                    node->node = impl;
+                }
                 return ret;
             },
             node->node);
-        auto const &n = node.hunt();
-        if (n->ns.has_value()) {
+        parser.node_stack.pop_back();
+        if (node->ns.has_value()) {
             parser.pop_namespace();
         }
         if (retval.has_value()) {
             auto const &type = retval.value();
             if (type == nullptr) {
-                n->status = ASTStatus::Undetermined;
+                node->status = ASTStatus::Undetermined;
                 parser.unbound_nodes.push_back(node);
                 parser.unbound++;
                 return BindError { ASTStatus::Undetermined };
             } else {
-                n->bound_type = type;
-                n->status = ASTStatus::Bound;
+                node->bound_type = type;
+                node->status = ASTStatus::Bound;
                 return type;
             }
         } else {
@@ -1092,7 +1155,7 @@ BindResult bind(ASTNode node)
                 parser.unbound++;
                 /* Fallthrough */
             default:
-                n->status = retval.error();
+                node->status = retval.error();
                 break;
             }
             return retval;

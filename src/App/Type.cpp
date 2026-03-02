@@ -171,6 +171,33 @@ intptr_t EnumType::align_of() const
     return underlying_type->align_of();
 }
 
+bool EnumType::is_valid(std::wstring_view label) const
+{
+    return std::ranges::any_of(
+        values,
+        [&label](auto const &value) -> bool {
+            return value.label == label;
+        });
+}
+
+std::optional<int64_t> EnumType::value_for(std::wstring_view label) const
+{
+    auto const &res = std::ranges::find_if(
+        values,
+        [&label](auto const &v) -> bool {
+            return v.label == label;
+        });
+    if (res != values.end()) {
+        return res->value;
+    }
+    return {};
+}
+
+pType EnumType::underlying() const
+{
+    return underlying_type;
+}
+
 std::wstring TaggedUnionType::to_string() const
 {
     return std::format(L"TaggedUnion({} tags)", tags.size());
@@ -187,7 +214,8 @@ intptr_t TaggedUnionType::size_of() const
                 maxsize = std::max(alignat(tag.payload->size_of(), align_of()), maxsize);
             }
         });
-    return alignat(tag_type->size_of(), align_of()) + maxsize;
+    maxsize = alignat(maxsize, tag_type->align_of());
+    return maxsize + tag_type->size_of();
 }
 
 intptr_t TaggedUnionType::align_of() const
@@ -200,6 +228,51 @@ intptr_t TaggedUnionType::align_of() const
             ret = std::max((tag.payload) ? tag.payload->align_of() : 0, ret);
         });
     return ret;
+}
+
+bool TaggedUnionType::is_valid(std::wstring_view label) const
+{
+    return get<EnumType>(tag_type).is_valid(label);
+}
+
+std::optional<int64_t> TaggedUnionType::value_for(std::wstring_view label) const
+{
+    return get<EnumType>(tag_type).value_for(label);
+}
+
+pType TaggedUnionType::payload_for(std::wstring_view label) const
+{
+    auto v = value_for(label);
+    if (!v) {
+        return nullptr;
+    }
+    return payload_for(*v);
+}
+
+pType TaggedUnionType::payload_for(int64_t tag) const
+{
+    for (auto const &t : tags) {
+        if (t.value == tag) {
+            return t.payload;
+        }
+    }
+    return TypeRegistry::void_;
+}
+
+pType TaggedUnionType::underlying() const
+{
+    return get<EnumType>(tag_type).underlying();
+}
+
+intptr_t TaggedUnionType::tag_offset() const
+{
+    intptr_t ret { 0 };
+    for (auto const &tag : tags) {
+        if (tag.payload->size_of() > ret) {
+            ret = tag.payload->size_of();
+        }
+    }
+    return alignat(ret, tag_type->align_of());
 }
 
 std::wstring StructType::to_string() const

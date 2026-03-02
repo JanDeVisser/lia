@@ -68,14 +68,15 @@ struct Parser {
     std::vector<LiaError>           errors;
     std::vector<ASTNode>            unbound_nodes;
     std::vector<ASTNode>            namespaces;
+    std::vector<ASTNode>            node_stack;
     ASTNode                         program;
     int                             pass { 0 };
     int                             unbound { 0 };
 
-    size_t             size() const { return nodes.size(); }
-    bool               empty() const { return nodes.empty(); }
-    ASTNodeImpl const &operator[](size_t ix) const { return nodes[ix]; }
-    ASTNodeImpl       &operator[](size_t ix) { return nodes[ix]; }
+    size_t             size() const;
+    bool               empty() const;
+    ASTNodeImpl const &operator[](size_t ix) const;
+    ASTNodeImpl       &operator[](size_t ix);
 
     template<class N, typename... Args>
     ASTNode make_node(TokenLocation loc, Args... args)
@@ -115,7 +116,7 @@ struct Parser {
     Token                              parse_statements(ASTNodes &statements);
     ASTNode                            parse_statement();
     ASTNode                            parse_module_level_statement();
-    ASTStatus                          bind(ASTNode node = nullptr);
+    BindResult                         bind(ASTNode node = nullptr);
     std::wstring_view                  text_at(size_t start, std::optional<size_t> end) const;
     std::wstring_view                  text_of(Token const &token) const;
     std::wstring_view                  text_of(LexerErrorMessage const &error) const;
@@ -208,6 +209,7 @@ struct Parser {
         append(lexer_error.location, std::vformat(message.get(), std::make_wformat_args(args...)));
     }
 
+    BindError bind_error(LiaError const &error);
     BindError bind_error(TokenLocation location, std::wstring const &msg);
     BindError bind_error(TokenLocation location, std::string const &msg);
 

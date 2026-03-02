@@ -1,0 +1,20 @@
+enum X: u64 {
+    A: string = 69,
+    B: i64  = 420,
+}
+
+struct Y {
+    foo: X,
+    bar: i64,
+}
+
+public func main() i32 {
+    y: Y = { X.A { "quux" }, 42 }
+    s := must y.foo.A
+    putln(s)
+    i := y.foo.B || 12
+    putint(i)
+    endln()
+    return 0::i32
+}
+

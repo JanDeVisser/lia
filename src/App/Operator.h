@@ -27,6 +27,7 @@ enum class Associativity {
 #define BinOps(S)    \
     S(Add)           \
     S(AddressOf)     \
+    S(Apply)         \
     S(BinaryAnd)     \
     S(BinaryInvert)  \
     S(BinaryOr)      \

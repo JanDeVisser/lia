@@ -818,8 +818,7 @@ std::wstring type_ref(pType const &type)
         prefix != nullptr) {
         return std::format(L":{}{}", prefix, *(type.id));
     } else {
-        auto t { qbe_type(type) };
-        assert(std::holds_alternative<ILBaseType>(t.inner));
+        auto                t { qbe_type_code(type) };
         std::wostringstream ss;
         ss << t;
         return ss.str();

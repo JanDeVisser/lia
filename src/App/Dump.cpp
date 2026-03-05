@@ -175,6 +175,9 @@ void dump(ASTNode const &n, Struct const &impl, std::wostream &os, int indent)
 template<>
 void dump(ASTNode const &n, TagValue const &impl, std::wostream &os, int indent)
 {
+    if (impl.operand) {
+        dump(impl.operand, os, indent + 4);
+    }
     if (impl.payload) {
         dump(impl.payload, os, indent + 4);
     }

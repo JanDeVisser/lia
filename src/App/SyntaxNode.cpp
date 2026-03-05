@@ -315,6 +315,15 @@ TagValue::TagValue(int64_t tag_value, std::wstring label, pType payload_type, AS
 {
 }
 
+TagValue::TagValue(ASTNode operand, int64_t tag_value, std::wstring label, pType payload_type, ASTNode payload)
+    : operand(std::move(operand))
+    , tag_value(tag_value)
+    , label(std::move(label))
+    , payload_type(std::move(payload_type))
+    , payload(std::move(payload))
+{
+}
+
 TypeSpecification::TypeSpecification(TypeSpecificationDescription description)
     : description(description)
 {

@@ -74,6 +74,7 @@ static constexpr wchar_t const *division_by_zero { L"Division by zero" };
 static constexpr wchar_t const *empty_optional { L"Empty optional value" };
 static constexpr wchar_t const *result_error { L"Unwrapping result value containing error" };
 static constexpr wchar_t const *result_success { L"Unwrapping error of result value containing success" };
+static constexpr wchar_t const *wrong_tagged_value { L"Unwrapping tagged value with wrong value" };
 
 static void check_division_by_zero(QBEOperand const &rhs, QBEContext &ctx)
 {
@@ -185,6 +186,38 @@ static void check_result(bool success, QBEOperand const &val, ResultType const &
         });
 }
 
+static void check_tagged_union(int64_t required, QBEOperand const &val, TaggedUnionType const &tagged_union, int value_not_ok, int value_ok, QBEContext &ctx)
+{
+    auto eql { ILValue::local(++ctx.next_var, ILBaseType::W) };
+    auto tag_ptr { ILValue::pointer(++ctx.next_var) };
+    auto tag_val { ILValue::local(++ctx.next_var, ILBaseType::W) };
+    ctx.add_operation(
+        ExprDef {
+            val.get_value(),
+            ILValue::integer(tagged_union.tag_offset(), ILBaseType::L),
+            ILOperation::Add,
+            tag_ptr,
+        });
+    ctx.add_operation(
+        LoadDef {
+            tag_ptr,
+            tag_val,
+        });
+    ctx.add_operation(
+        ExprDef {
+            ILValue::integer(required, ILBaseType::W),
+            tag_val,
+            ILOperation::Equals,
+            eql,
+        });
+    ctx.add_operation(
+        JnzDef {
+            eql,
+            value_ok,
+            value_not_ok,
+        });
+}
+
 static void optional_must(QBEOperand const &val, OptionalType const &optional, QBEContext &ctx)
 {
     int carry_on = ++ctx.next_label;
@@ -219,6 +252,25 @@ static void result_must(bool success, QBEOperand const &val, ResultType const &r
     ctx.add_operation(LabelDef { carry_on });
 }
 
+static void tagged_union_must(QBEOperand const &val, TaggedUnionType const &tagged_union, QBEContext &ctx)
+{
+    int carry_on = ++ctx.next_label;
+    int abort_mission = ++ctx.next_label;
+    assert(is<TagValue>(val.node));
+    auto const &tag_value { get<TagValue>(val.node) };
+    check_tagged_union(tag_value.tag_value, val, tagged_union, abort_mission, carry_on, ctx);
+    ctx.add_operation(LabelDef { abort_mission });
+    ILValue empty_optional_id = ctx.add_string(wrong_tagged_value);
+    CallDef call_def = {
+        L"libliart:lia$abort",
+        ILValue::null(),
+    };
+    call_def.args.push_back(empty_optional_id);
+    call_def.args.push_back(ILValue::integer(wcslen(empty_optional), ILBaseType::L));
+    ctx.add_operation(call_def);
+    ctx.add_operation(LabelDef { carry_on });
+}
+
 static GenResult unwrap_optional(ASTNode const &unwrapped, QBEOperand const &optional, QBEContext &ctx)
 {
     auto reference = QBEOperand {
@@ -235,6 +287,19 @@ static GenResult unwrap_result(bool success, ASTNode const &unwrapped, QBEOperan
     auto reference = QBEOperand {
         unwrapped,
         TypeRegistry::the().referencing((success) ? result_type.success : result_type.error),
+        result.get_value(),
+    };
+    return TRY_DEREFERENCE(reference, ctx);
+}
+
+static GenResult unwrap_tagged_union(ASTNode const &unwrapped, QBEOperand const &result, QBEContext &ctx)
+{
+    auto tagged_union = get<TaggedUnionType>(result.ptype);
+    assert(is<TagValue>(result.node));
+    auto const &tag_value { get<TagValue>(result.node) };
+    auto        reference = QBEOperand {
+        unwrapped,
+        TypeRegistry::the().referencing(tag_value.payload_type),
         result.get_value(),
     };
     return TRY_DEREFERENCE(reference, ctx);
@@ -742,6 +807,22 @@ GenResult qbe_operator(QBEUnaryExpr const &expr, OptionalType const &optional, Q
                 ret_value,
             });
         return QBEOperand { expr.node, ret_value };
+    } break;
+    default:
+        NYI("QBE mapping for optional operator `{}`", Operator_name(expr.op));
+        break;
+    }
+}
+
+template<>
+GenResult qbe_operator(QBEUnaryExpr const &expr, TaggedUnionType const &tagged_union, QBEContext &ctx)
+{
+    auto operand = TRY_DEREFERENCE(expr.operand, ctx);
+    auto var = ILValue::local(++ctx.next_var, operand.get_value().type);
+    switch (expr.op) {
+    case Operator::Unwrap: {
+        tagged_union_must(operand, tagged_union, ctx);
+        return unwrap_tagged_union(expr.node, operand, ctx);
     } break;
     default:
         NYI("QBE mapping for optional operator `{}`", Operator_name(expr.op));

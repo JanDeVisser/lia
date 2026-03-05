@@ -42,6 +42,7 @@ std::vector<BinaryOperator> binary_ops {
     { PseudoType::Boolean, Operator::LogicalOr, PseudoType::Boolean, PseudoType::Boolean },
     { TypeKind::OptionalType, Operator::LogicalOr, PseudoType::Refer, PseudoType::Refer },
     { TypeKind::ResultType, Operator::LogicalOr, PseudoType::Refer, PseudoType::Refer },
+    { TypeKind::TaggedUnionType, Operator::LogicalOr, PseudoType::Refer, PseudoType::Refer },
 };
 
 std::vector<UnaryOperator> unary_ops = {
@@ -60,6 +61,7 @@ std::vector<UnaryOperator> unary_ops = {
     { Operator::Length, TypeKind::EnumType, PseudoType::String },
     { Operator::Unwrap, TypeKind::OptionalType, PseudoType::Refer },
     { Operator::Unwrap, TypeKind::ResultType, PseudoType::Refer },
+    { Operator::Unwrap, TypeKind::TaggedUnionType, PseudoType::Refer },
     { Operator::UnwrapError, TypeKind::ResultType, PseudoType::Error },
 };
 

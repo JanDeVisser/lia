@@ -418,12 +418,14 @@ struct Struct {
 };
 
 struct TagValue {
+    ASTNode      operand { nullptr };
     int64_t      tag_value;
     std::wstring label;
     pType        payload_type;
     ASTNode      payload;
 
     TagValue(int64_t tag_value, std::wstring label, pType payload_type, ASTNode payload);
+    TagValue(ASTNode operand, int64_t tag_value, std::wstring label, pType payload_type, ASTNode payload);
 };
 
 struct TypeNameNode {

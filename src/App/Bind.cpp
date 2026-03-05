@@ -186,7 +186,7 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
                             return std::unexpected(
                                 LiaError {
                                     impl.rhs->location,
-                                    std::format(L"Unknown enum value `{}`", label),
+                                    std::format(L"Unknown tagged union value `{}`", label),
                                 });
                         },
                         [&label, &impl, &n, &parser, &type_type](EnumType const &t) -> std::expected<ASTNode, LiaError> {
@@ -222,27 +222,45 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
                 L"Left hand side of member access operator must be value reference");
         }
         auto lhs_value_type = lhs_type->value_type();
-        if (lhs_value_type->kind() != TypeKind::StructType) {
-            return parser.bind_error(
-                impl.lhs->location,
-                L"Left hand side of member access operator must have struct type");
-        }
-        auto const &struct_descr = get<StructType>(lhs_value_type);
-        auto        find_member = [&struct_descr, &parser, &impl](std::wstring_view const name) -> std::expected<StructType::Field, std::wstring> {
-            for (auto const &field : struct_descr.fields) {
-                if (field.name == name) {
-                    return field;
-                }
-            }
-            return std::unexpected(std::format(L"Unknown struct field `{}`", name));
-        };
-        if (auto struct_field = find_member(get<Identifier>(impl.rhs).identifier); !struct_field) {
-            return parser.bind_error(impl.rhs->location, struct_field.error());
-        } else {
-            impl.rhs->bound_type = TypeRegistry::string;
-            impl.rhs->status = ASTStatus::Bound;
-            return TypeRegistry::the().referencing(struct_field->type);
-        }
+        return std::visit(
+            overloads {
+                [&parser, &impl](StructType const &strukt) -> BindResult {
+                    auto find_member = [&strukt, &parser, &impl](std::wstring_view const name) -> std::expected<StructType::Field, std::wstring> {
+                        for (auto const &field : strukt.fields) {
+                            if (field.name == name) {
+                                return field;
+                            }
+                        }
+                        return std::unexpected(std::format(L"Unknown struct field `{}`", name));
+                    };
+                    if (auto struct_field = find_member(get<Identifier>(impl.rhs).identifier); !struct_field) {
+                        return parser.bind_error(impl.rhs->location, struct_field.error());
+                    } else {
+                        impl.rhs->bound_type = TypeRegistry::string;
+                        impl.rhs->status = ASTStatus::Bound;
+                        return TypeRegistry::the().referencing(struct_field->type);
+                    }
+                },
+                [&parser, &impl, &lhs_value_type, &n](TaggedUnionType const &tagged_union) -> BindResult {
+                    if (!is<Identifier>(impl.rhs)) {
+                        return parser.bind_error(impl.rhs->location,
+                            L"The right-hand side of a member access must be an identifier");
+                    }
+                    auto const &label = get<Identifier>(impl.rhs).identifier;
+                    if (auto v = tagged_union.value_for(label); v) {
+                        auto ret = make_node<TagValue>(n, impl.lhs, static_cast<int64_t>(*v), label, tagged_union.payload_for(label), nullptr);
+                        return lhs_value_type;
+                    }
+                    return parser.bind_error(
+                        impl.rhs->location,
+                        L"Unknown tagged union value `{}`", label);
+                },
+                [&parser, &lhs_value_type, &impl](auto const &) -> BindResult {
+                    return parser.bind_error(
+                        impl.rhs->location,
+                        L"Left hand side of member access operator has type `{}` which is not a struct", lhs_value_type->name);
+                } },
+            lhs_value_type->description);
     }
 
     auto lhs_value_type = lhs_type->value_type();
@@ -996,7 +1014,7 @@ BindResult bind(ASTNode n, UnaryExpression &impl)
                     [](TypeKind const &result_type) -> pType {
                         UNREACHABLE();
                     },
-                    [&operand_type](PseudoType const &pseudo_type) -> pType {
+                    [&operand_type, &operand, &impl](PseudoType const &pseudo_type) -> pType {
                         switch (pseudo_type) {
                         case PseudoType::Self:
                             return operand_type;
@@ -1016,6 +1034,10 @@ BindResult bind(ASTNode n, UnaryExpression &impl)
                                     },
                                     [](ResultType const &result) -> pType {
                                         return TypeRegistry::the().referencing(result.success);
+                                    },
+                                    [&impl](TaggedUnionType const &result) -> pType {
+                                        assert(impl.operand->type() == SyntaxNodeType::TagValue);
+                                        return TypeRegistry::the().referencing(get<TagValue>(impl.operand).payload_type);
                                     },
                                     [](auto const &) -> pType {
                                         UNREACHABLE();

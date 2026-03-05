@@ -808,6 +808,9 @@ std::wstring type_ref(pType const &type)
                 [](ResultType const &) -> wchar_t const * {
                     return L"res";
                 },
+                [](TaggedUnionType const &) -> wchar_t const * {
+                    return L"union";
+                },
                 [&type](auto const &) -> wchar_t const * {
                     return nullptr;
                 } },
@@ -837,25 +840,44 @@ void emit_type(pType const &type, std::wostream &os)
             },
             [&os, &type](StructType const &strukt) {
                 os << L"type " << type_ref(type) << " = { ";
-                auto s = flatten_type(type);
-                auto first { true };
-                for (auto const c : s) {
-                    if (!first) {
-                        os << ", ";
-                    }
-                    first = false;
-                    os << c;
-                }
+                std::ranges::for_each(
+                    strukt.fields | std::ranges::views::enumerate,
+                    [&os](auto const &f) {
+                        auto const &[ix, fld] = f;
+                        if (ix > 0) {
+                            os << ", ";
+                        }
+                        os << type_ref(fld.type);
+                    });
                 os << " }\n";
             },
             [&os, &type](ResultType const &result) {
                 os << "type "
-                   << type_ref(type) << "_union = { { "
+                   << type_ref(type) << "$_union = { { "
                    << type_ref(result.success) << " } { "
                    << type_ref(result.error) << " } }\n";
                 os << "type "
                    << type_ref(type) << " = { "
-                   << type_ref(type) << "_union, b }\n";
+                   << type_ref(type) << "$_union, b }\n";
+            },
+            [&os, &type](TaggedUnionType const &tagged_union) {
+                os << "type "
+                   << type_ref(type) << "$_union = { ";
+                std::ranges::for_each(
+                    tagged_union.tags,
+                    [&os](TaggedUnionType::Tag const &tag) {
+                        if (tag.payload != nullptr && tag.payload != TypeRegistry::void_) {
+                            os << "{ "
+                               << type_ref(tag.payload)
+                               << " } ";
+                        }
+                    });
+                os << " }\n"
+                   << "type "
+                   << type_ref(type) << " = { "
+                   << type_ref(type) << "$_union, "
+                   << type_ref(tagged_union.underlying())
+                   << " }\n";
             },
             [&os, &type](auto const &) {
             } },

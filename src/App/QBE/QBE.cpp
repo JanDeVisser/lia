@@ -278,7 +278,7 @@ GenResult QBEOperand::dereference(QBEContext &ctx) const
         assert(value.has_value());
         ret_op.ptype = get<ReferenceType>(ptype).referencing;
         if (qbe_first_class_type(ret_op.ptype)) {
-            ret_op.set_value(ILValue::local(++ctx.next_var, ctx.qbe_type(ret_op.ptype)));
+            ret_op.set_value(ILValue::local(++ctx.next_var, qbe_load_code(ret_op.ptype)));
             ctx.add_operation(
                 LoadDef {
                     .pointer = get_value(),
@@ -287,14 +287,6 @@ GenResult QBEOperand::dereference(QBEContext &ctx) const
         }
         return ret_op;
     }
-    //    if (is<OptionalType>(ptype)) {
-    //        return QBEOperand {
-    //            node,
-    //            TypeRegistry::the().referencing(get<OptionalType>(ptype).type),
-    //            get_value(),
-    //        }
-    //            .dereference(ctx);
-    //   }
     std::visit(
         overloads {
             [&ctx, &ret_op, this](ILValue::Variable const &variable) {
@@ -723,13 +715,37 @@ GenResult generate_qbe_node(ASTNode const &n, Call const &impl, QBEContext &ctx)
     }
 
     for (auto const &[arg, param] : std::ranges::views::zip(get<ExpressionList>(impl.arguments).expressions, decl.parameters)) {
-        trace(L"  Argument `{}`: {}", get<Parameter>(param).name, arg->bound_type->to_string());
+        trace(L"  Argument `{}`: {} param type {}", get<Parameter>(param).name, arg->bound_type->name, param->bound_type->name);
         if (is<ReferenceType>(param->bound_type)) {
+            trace("param is reference");
             QBE_ASSERT(is<ReferenceType>(arg->bound_type), ctx);
             auto value = TRY_GENERATE(arg, ctx).get_value();
             value.type = ILBaseType::L;
             args.emplace_back(value);
+        } else if (is<ReferenceType>(arg->bound_type) && !qbe_first_class_type(param->bound_type)) {
+            trace("param not reference, arg is reference");
+            auto arg_alloc { ILValue::local(++ctx.next_var, qbe_type(param->bound_type)) };
+            ctx.add_operation(
+                AllocDef {
+                    (param->bound_type->size_of() < 8) ? 4u : 8u,
+                    static_cast<size_t>(param->bound_type->size_of()),
+                    arg_alloc,
+                });
+            auto ptr { ILValue::local(++ctx.next_var, ILBaseType::L) };
+            ctx.add_operation(
+                LoadDef {
+                    TRY_GENERATE(arg, ctx).get_value(),
+                    ptr,
+                });
+            ctx.add_operation(
+                BlitDef {
+                    ptr,
+                    arg_alloc,
+                    param->bound_type->size_of(),
+                });
+            args.emplace_back(arg_alloc);
         } else {
+            trace("param not reference, arg not reference");
             auto operand { TRY_GENERATE(arg, ctx) };
             args.emplace_back(TRY_DEREFERENCE(operand, ctx).get_value());
         }
@@ -1177,6 +1193,11 @@ GenResult generate_qbe_node(ASTNode const &n, Struct const &impl, QBEContext &ct
 template<>
 GenResult generate_qbe_node(ASTNode const &n, TagValue const &impl, QBEContext &ctx)
 {
+    if (impl.operand != nullptr) {
+        auto ret = TRY_GENERATE(impl.operand, ctx);
+        ret.node = n;
+        return ret;
+    }
     ILValues values;
     if (impl.payload == nullptr) {
         values.emplace_back(ILValue {});

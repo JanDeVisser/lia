@@ -163,7 +163,7 @@ struct Parser {
     bool                       has_variable(std::wstring const &name) const;
     void                       register_function(std::wstring name, ASTNode node);
     void                       unregister_function(std::wstring name, ASTNode node);
-    pType                      find_type(std::wstring const &name) const;
+    pType                      find_type(Strings const &name) const;
     ASTNode                    current_function() const;
     void                       register_type(std::wstring name, pType type);
     void                       clear_namespaces();

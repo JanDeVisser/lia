@@ -712,9 +712,21 @@ ASTNode Parser::parse_type()
         }
     }
 
-    auto name = lexer.accept_identifier();
-    if (!name) {
-        append(lexer.peek(), "Expected type name");
+    Strings       name;
+    TokenLocation start = lexer.peek().location;
+    while (true) {
+        auto n = lexer.accept_identifier();
+        if (!n) {
+            append(lexer.peek(), "Expected type name");
+            name.clear();
+            break;
+        }
+        name.emplace_back(std::wstring { text_of(n.value()) });
+        if (!lexer.accept_symbol('.')) {
+            break;
+        }
+    }
+    if (name.empty()) {
         return {};
     }
     ASTNodes arguments;
@@ -740,17 +752,12 @@ ASTNode Parser::parse_type()
         }
     }
     auto type = make_node<TypeSpecification>(
-        name->location + lexer.last_location,
-        TypeNameNode { std::wstring { text_of(name.value()) }, arguments });
-    if (lexer.accept_symbol('?')) {
-        type = make_node<TypeSpecification>(
-            name->location + lexer.last_location,
-            OptionalDescriptionNode { type });
-    }
+        start + lexer.last_location,
+        TypeNameNode { std::move(name), std::move(arguments) });
     if (lexer.accept_symbol('/')) {
         if (auto error_type = parse_type(); error_type != nullptr) {
             return make_node<TypeSpecification>(
-                name->location + lexer.last_location,
+                start + lexer.last_location,
                 ResultDescriptionNode { type, error_type });
         }
         return {};

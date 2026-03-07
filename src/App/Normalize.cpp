@@ -5,14 +5,18 @@
  */
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 
+#include <App/Config.h>
 #include <App/Operator.h>
 #include <App/Parser.h>
 #include <App/SyntaxNode.h>
 #include <string>
 
 namespace Lia {
+
+namespace fs = std::filesystem;
 
 template<class N>
 ASTNode normalize(ASTNode n, N const &impl)
@@ -276,10 +280,12 @@ ASTNode normalize(ASTNode n, Import const &impl)
         if (fname[ix] == '.')
             fname[ix] = '/';
     }
-    if (!fname.ends_with(L".lia")) {
-        fname += L".lia";
+    fs::path path { fname };
+    path.concat(".lia");
+    if (!fs::exists(path)) {
+        path = lia_dir() / "share" / path;
     }
-    if (auto contents_maybe = read_file_by_name<wchar_t>(as_utf8(fname)); contents_maybe.has_value()) {
+    if (auto contents_maybe = read_file_by_name<wchar_t>(path.string()); contents_maybe.has_value()) {
         info(L"Importing module `{}`", impl.file_name);
         auto const &contents = contents_maybe.value();
         Parser     &parser { *(n.repo) };
@@ -289,7 +295,7 @@ ASTNode normalize(ASTNode n, Import const &impl)
             return parser.make_node<Dummy>(n->location);
         }
     } else {
-        n.error(L"Could not open import file `{}`", fname);
+        n.error(L"Could not open import `{}`", impl.file_name);
     }
     return n;
 }

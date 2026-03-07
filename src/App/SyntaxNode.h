@@ -94,6 +94,7 @@ extern char const *SyntaxNodeType_name(SyntaxNodeType type);
 extern void        print_indent(std::wostream &os, int indent);
 
 using Label = std::optional<std::wstring>;
+using Strings = std::vector<std::wstring>;
 
 struct Parser;
 
@@ -432,8 +433,8 @@ struct TagValue {
 };
 
 struct TypeNameNode {
-    std::wstring name;
-    ASTNodes     arguments {};
+    Strings  name;
+    ASTNodes arguments {};
 };
 
 struct ReferenceDescriptionNode {

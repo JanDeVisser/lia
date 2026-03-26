@@ -4,7 +4,7 @@ public func main() i32 {
     raylib.InitWindow(800::i32, 600::i32, `Lia Speedrun`)
     while (!raylib.WindowShouldClose()) {
         raylib.BeginDrawing()
-        color: raylib.Color = { 0xFF::u8, 0::u8, 0::u8, 0xFF::u8 }
+        color: raylib.Color = { 0xFF::u8, 0::u8, 0x0::u8, 0xFF::u8 }
         raylib.ClearBackground(color)
         raylib.EndDrawing()
     }

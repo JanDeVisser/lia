@@ -273,7 +273,7 @@ ASTNode normalize(ASTNode n, Import const &impl)
             proxy = parser.make_node<ModuleProxy>(n->location, elem);
             proxy->init_namespace();
             parser.pop_namespace(proxy);
-            ns->register_module(elem, proxy);
+            parser.namespaces.back()->register_module(elem, proxy);
             ns = proxy->ns;
         }
     }

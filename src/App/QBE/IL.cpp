@@ -268,6 +268,13 @@ void flatten_type(VoidType const &, ILLayout &)
 {
 }
 
+void flatten_type(TypeList const &type_list, ILLayout &layout)
+{
+    for (auto const &t : type_list.types) {
+        flatten_type(t, layout);
+    }
+}
+
 void flatten_type(ZeroTerminatedArray const &, ILLayout &)
 {
 }

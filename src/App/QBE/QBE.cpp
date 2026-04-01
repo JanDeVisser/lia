@@ -501,8 +501,9 @@ GenResult variable_decl(ASTNode const &n, std::wstring const &name, pType const 
     size_t      size = type->size_of();
     auto const &binding = ctx.add(name, type);
     auto        var_ref = ILValue::variable(binding.index, ILBaseType::L);
-    QBEOperand  operand { n, var_ref };
+    QBEOperand  operand { n, var_ref, type };
     if (init != nullptr) {
+        info(L"VARIABLE_DECL {} {} = {}", name, operand.ptype->to_string(), as_wstring(SyntaxNodeType_name(init->type())));
         return assign(operand, init, ctx);
     }
     return operand;
@@ -714,7 +715,27 @@ GenResult generate_qbe_node(ASTNode const &n, Call const &impl, QBEContext &ctx)
         } else {
             trace("param not reference, arg not reference");
             auto operand { TRY_GENERATE(arg, ctx) };
-            args.emplace_back(TRY_DEREFERENCE(operand, ctx).get_value());
+            auto arg_value { TRY_DEREFERENCE(operand, ctx).get_value() };
+
+            std::visit(
+                overloads {
+                    [&arg_value, &ctx, &args](ILBaseType const bt) -> void {
+                        if (size_of(bt) < 4) {
+                            auto word { ILValue::local(++ctx.next_var, ILBaseType::W) };
+                            ctx.add_operation(
+                                ExtDef {
+                                    arg_value,
+                                    word,
+                                });
+                            args.emplace_back(word);
+                        } else {
+                            args.emplace_back(arg_value);
+                        }
+                    },
+                    [&arg_value, &args](auto const t) -> void {
+                        args.emplace_back(arg_value);
+                    } },
+                arg_value.type.inner);
         }
     }
 

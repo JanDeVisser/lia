@@ -162,7 +162,19 @@ inline ILBaseType il_type_for<int64_t>()
 }
 
 template<>
+inline ILBaseType il_type_for<long>()
+{
+    return ILBaseType::L;
+}
+
+template<>
 inline ILBaseType il_type_for<uint64_t>()
+{
+    return ILBaseType::L;
+}
+
+template<>
+inline ILBaseType il_type_for<unsigned long>()
 {
     return ILBaseType::L;
 }
@@ -844,9 +856,9 @@ struct QBEOperand {
     {
     }
 
-    QBEOperand(ASTNode const &n, ILValue const &value)
+    QBEOperand(ASTNode const &n, ILValue const &value, pType const &type = nullptr)
         : node(n)
-        , ptype(n->bound_type)
+        , ptype((type != nullptr) ? type : n->bound_type)
         , value(value)
     {
     }

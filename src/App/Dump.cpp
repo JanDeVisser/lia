@@ -239,7 +239,7 @@ std::wstring to_string(ASTNode const &, Decimal const &impl)
 {
     std::wstringstream os;
     os << impl.value;
-    return os.str();
+    return std::wstring { os.view() };
 }
 
 template<>

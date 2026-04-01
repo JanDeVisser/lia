@@ -96,7 +96,11 @@ void QBEContext::add_operation(ILInstructionImpl impl)
     auto &file { program.files[current_file] };
     auto &function { file.functions[current_function] };
     if (!function.instructions.empty()
-        && std::holds_alternative<RetDef>(function.instructions.back().impl)) {
+        && std::holds_alternative<RetDef>(function.instructions.back().impl)
+        && !std::holds_alternative<LabelDef>(impl)) {
+        info(L"Instruction of type `{}` follows ret",
+            std::visit(
+                [](auto const &def) { return demangle<decltype(def)>(); }, impl));
         assert(std::holds_alternative<DbgLoc>(impl));
         return;
     }

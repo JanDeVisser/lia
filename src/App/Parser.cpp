@@ -6,6 +6,7 @@
 
 // #define DEBUG_NAMESPACE_STACK
 
+#include "App/Keyword.h"
 #include <algorithm>
 #include <cstddef>
 #include <optional>
@@ -22,11 +23,18 @@
 #include <App/Parser.h>
 #include <App/SyntaxNode.h>
 #include <App/Type.h>
+#include <variant>
 
 namespace Lia {
 
 using namespace std::literals;
 using namespace Util;
+
+static ASTNode parse_alias(Parser &parser);
+static ASTNode parse_extern(Parser &parser);
+static ASTNode parse_func_decl(Parser &parser, Parser::Token const &func);
+static ASTNode parse_c_type(Parser &parser);
+static ASTNode parse_c_func_decl(Parser &parser);
 
 std::vector<Parser::OperatorDef> Parser::operators {
     { Operator::Add, '+', 11 },
@@ -170,11 +178,15 @@ ASTNode Parser::parse_module_level_statement()
         return parse_statement();
     case TokenKind::Keyword: {
         switch (t.keyword()) {
+        case LiaKeyword::Alias:
+            return parse_alias(*this);
         case LiaKeyword::Const:
             lexer.lex();
             return parse_module_level_statement();
         case LiaKeyword::Enum:
             return parse_enum();
+        case LiaKeyword::Extern:
+            return parse_extern(*this);
         case LiaKeyword::Func:
             return parse_func();
         case LiaKeyword::Import:
@@ -222,6 +234,8 @@ ASTNode Parser::parse_statement()
         return parse_expression();
     case TokenKind::Keyword: {
         switch (t.keyword()) {
+        case LiaKeyword::Alias:
+            return parse_alias(*this);
         case LiaKeyword::Break:
         case LiaKeyword::Continue:
             return parse_break_continue();
@@ -793,6 +807,28 @@ ASTNode Parser::parse_type()
     return type;
 }
 
+ASTNode parse_alias(Parser &parser)
+{
+    auto &lexer { parser.lexer };
+    auto  kw { lexer.lex() };
+
+    auto name = lexer.expect_identifier();
+    if (!name.has_value()) {
+        parser.append(lexer.last_location, "Expected alias name");
+        return {};
+    }
+
+    auto type { parser.parse_type() };
+    if (type == nullptr) {
+        parser.append(lexer.last_location, "Expected aliased type name");
+        return {};
+    }
+    return parser.make_node<Alias>(
+        kw.location + lexer.last_location,
+        std::wstring { parser.text_of(name) },
+        type);
+}
+
 ASTNode Parser::parse_break_continue()
 {
     auto kw = lexer.lex();
@@ -908,6 +944,457 @@ ASTNode Parser::parse_enum()
         values);
 }
 
+ASTNode parse_func_decl(Parser &parser, Parser::Token const &func)
+{
+    auto        &lexer { parser.lexer };
+    std::wstring name;
+    if (auto res = lexer.expect_identifier(); !res.has_value()) {
+        parser.append(res.error(), "Expected function name");
+        return {};
+    } else {
+        name = parser.text_of(res.value());
+    }
+
+    ASTNodes generics;
+    if (lexer.accept_symbol('<')) {
+        while (true) {
+            if (lexer.accept_symbol('>')) {
+                break;
+            }
+            std::wstring  generic_name;
+            TokenLocation start;
+            if (auto res = lexer.expect_identifier(); !res.has_value()) {
+                parser.append(res.error(), "Expected generic name");
+                return {};
+            } else {
+                generics.emplace_back(parser.make_node<Identifier>(res.value().location, parser.text_of(res.value())));
+            }
+            if (lexer.accept_symbol('>')) {
+                break;
+            }
+            if (auto res = lexer.expect_symbol(','); !res.has_value()) {
+                parser.append(res.error(), "Expected ',' in function signature generic list");
+            }
+        }
+    }
+
+    if (auto res = lexer.expect_symbol('('); !res.has_value()) {
+        parser.append(res.error(), "Expected '(' in function definition");
+    }
+    ASTNodes params;
+    while (true) {
+        if (lexer.accept_symbol(')')) {
+            break;
+        }
+        std::wstring  param_name;
+        TokenLocation start;
+        if (auto res = lexer.expect_identifier(); !res.has_value()) {
+            parser.append(res.error(), "Expected parameter name");
+            return {};
+        } else {
+            param_name = parser.text_of(res.value());
+            start = res.value().location;
+        }
+        if (auto res = lexer.expect_symbol(':'); !res.has_value()) {
+            parser.append(res.error(), "Expected ':' in function parameter declaration");
+        }
+        auto          param_type = parser.parse_type();
+        TokenLocation end;
+        if (param_type == nullptr) {
+            parser.append(lexer.peek(), "Expected parameter type");
+            return {};
+        }
+        params.emplace_back(parser.make_node<Parameter>(start + param_type->location, param_name, param_type));
+        if (lexer.accept_symbol(')')) {
+            break;
+        }
+        if (auto res = lexer.expect_symbol(','); !res.has_value()) {
+            parser.append(res.error(), "Expected ',' in function signature");
+        }
+    }
+    auto          return_type = parser.parse_type();
+    TokenLocation return_type_loc;
+    if (return_type == nullptr) {
+        parser.append(lexer.peek(), "Expected return type");
+        return {};
+    }
+    return parser.make_node<FunctionDeclaration>(
+        func.location + return_type->location,
+        name,
+        generics,
+        params,
+        return_type);
+}
+
+ASTNode parse_c_type(Parser &parser)
+{
+    auto         &lexer = parser.lexer;
+    std::wstring  name;
+    bool          is_unsigned { false };
+    TokenLocation start { lexer.peek().location };
+
+    while (name.empty()) {
+        if (lexer.accept_keyword(LiaKeyword::Const)) {
+            continue;
+        }
+        if (auto res { lexer.expect_identifier() }; !res) {
+            parser.append(res.error(), "Expected type in `C` style function declaration");
+            return {};
+        } else {
+            auto id = parser.text_of(res.value());
+            if (id == L"unsigned") {
+                is_unsigned = true;
+                continue;
+            }
+            name = id;
+            break;
+        }
+    }
+    auto next { lexer.peek() };
+    while (true) {
+        if (lexer.accept_keyword(LiaKeyword::Const)) {
+            continue;
+        }
+        if (next.kind == TokenKind::Identifier) {
+            auto id = parser.text_of(next);
+            if (id == L"unsigned") {
+                is_unsigned = true;
+                lexer.lex();
+                continue;
+            }
+        }
+        break;
+    }
+    if (name == L"int") {
+        name = (is_unsigned) ? L"u32" : L"i32";
+    } else if (name == L"long") {
+        name = (is_unsigned) ? L"u64" : L"i64";
+    } else if (name == L"short") {
+        name = (is_unsigned) ? L"u16" : L"i16";
+    } else if (name == L"byte") {
+        name = (is_unsigned) ? L"u8" : L"i8";
+    } else if (name == L"uint8_t" || name == L"char") {
+        name = L"u8";
+    } else if (name == L"int8_t") {
+        name = L"i8";
+    } else if (name == L"uint16_t") {
+        name = L"u16";
+    } else if (name == L"int16_t") {
+        name = L"i16";
+    } else if (name == L"uint32_t") {
+        name = L"u32";
+    } else if (name == L"int32_t") {
+        name = L"i32";
+    } else if (name == L"uint64_t" || name == L"size_t" || name == L"intptr_t") {
+        name = L"u64";
+    } else if (name == L"int64_t" || name == L"ptrdiff_t") {
+        name = L"i64";
+    } else if (name == L"float") {
+        name = L"f32";
+    } else if (name == L"double") {
+        name = L"f64";
+    }
+    auto type { parser.make_node<TypeSpecification>(
+        start + lexer.last_location,
+        TypeNameNode { Strings { name }, ASTNodes {} }) };
+    bool is_pointer { false };
+    while (lexer.accept_symbol('*')) {
+        if (name == L"u8" && !is_pointer) {
+            type = parser.make_node<TypeSpecification>(
+                start + lexer.last_location,
+                TypeNameNode { Strings { L"cstring" } });
+        } else {
+            type = parser.make_node<TypeSpecification>(
+                start + lexer.last_location,
+                PointerDescriptionNode { type });
+        }
+        is_pointer = true;
+    }
+    return type;
+}
+
+ASTNode parse_c_func_decl(Parser &parser)
+{
+    auto &lexer { parser.lexer };
+    auto  return_type { parse_c_type(parser) };
+    if (return_type == nullptr) {
+        parser.append(lexer.last_location, "Expected return type of `C` style function declaration");
+        return {};
+    }
+    std::wstring name;
+    if (auto res = lexer.expect_identifier(); !res.has_value()) {
+        parser.append(res.error(), "Expected function name in `C` style function declaration");
+        return {};
+    } else {
+        name = parser.text_of(res.value());
+    }
+
+    if (auto res = lexer.expect_symbol('('); !res.has_value()) {
+        parser.append(res.error(), "Expected '(' in function definition");
+    }
+
+    ASTNodes params;
+    while (true) {
+        if (lexer.accept_symbol(')')) {
+            break;
+        }
+        auto param_type = parse_c_type(parser);
+        if (param_type == nullptr) {
+            parser.append(lexer.peek(), "Expected parameter type");
+            return {};
+        }
+        if (params.empty() && lexer.peek().matches_symbol(')')) {
+            auto const &spec { get<TypeSpecification>(param_type) };
+            if (auto const *descr { std::get_if<TypeNameNode>(&spec.description) }; descr != nullptr) {
+                if (descr->name.size() == 1 && descr->name[0] == L"void") {
+                    lexer.lex();
+                    break;
+                }
+            }
+        }
+
+        std::wstring  param_name;
+        TokenLocation start;
+        if (auto res = lexer.accept_identifier(); !res.has_value()) {
+            param_name = std::format(L"param{}", params.size());
+        } else {
+            param_name = parser.text_of(res.value());
+        }
+        params.emplace_back(parser.make_node<Parameter>(param_type->location + lexer.last_location, param_name, param_type));
+        if (lexer.accept_symbol(')')) {
+            break;
+        }
+        if (auto res = lexer.expect_symbol(','); !res.has_value()) {
+            parser.append(res.error(), "Expected ',' in function signature");
+        }
+    }
+    lexer.accept_symbol(';');
+
+    return parser.make_node<FunctionDeclaration>(
+        return_type->location + lexer.last_location,
+        name,
+        ASTNodes {},
+        params,
+        return_type);
+}
+
+ASTNode parse_c_struct(Parser &parser)
+{
+    auto &lexer { parser.lexer };
+    auto  struct_start { lexer.last_location };
+    lexer.accept_identifier();
+    if (!lexer.expect_symbol('{')) {
+        parser.append(lexer.last_location, "Expected `{` in `C` style struct definition");
+        return {};
+    }
+    ASTNodes fields;
+    while (true) {
+        if (lexer.accept_symbol('}')) {
+            break;
+        }
+        auto field_type = parse_c_type(parser);
+        if (field_type == nullptr) {
+            parser.append(lexer.peek(), "Expected struct field type");
+            return {};
+        }
+
+        while (true) {
+            std::wstring  field_name;
+            TokenLocation start;
+            if (auto res = lexer.expect_identifier(); !res.has_value()) {
+                parser.append(res.error(), "Expected struct field name");
+                return {};
+            } else {
+                field_name = parser.text_of(res.value());
+                start = res.value().location;
+            }
+            if (lexer.accept_symbol('[')) {
+                if (auto dim { lexer.accept_number() }; dim) {
+                    if (auto v = string_to_integer<size_t>(parser.text_of(*dim), static_cast<int>(dim->radix())); v) {
+                        field_type = parser.make_node<TypeSpecification>(
+                            start + lexer.last_location,
+                            ArrayDescriptionNode { field_type, *v });
+                    } else {
+                        fatal(L"Cannot parse `{}` as an integer with radix `{}`", parser.text_of(*dim), static_cast<int>(dim->radix()));
+                    }
+                } else {
+                    field_type = parser.make_node<TypeSpecification>(
+                        start + lexer.last_location,
+                        PointerDescriptionNode { field_type });
+                }
+                if (!lexer.expect_symbol(']')) {
+                    parser.append(lexer.last_location, L"Expected `]` while parsing `C` style struct field `{}`", field_name);
+                    return {};
+                }
+            }
+            fields.emplace_back(parser.make_node<StructMember>(field_type->location + lexer.last_location, field_name, field_type));
+            if (lexer.accept_symbol(';')) {
+                break;
+            }
+            if (auto res = lexer.expect_symbol(','); !res.has_value()) {
+                parser.append(lexer.last_location, "Expected `,` or `;` in `C` style struct definition");
+            }
+        }
+        if (lexer.accept_symbol('}')) {
+            break;
+        }
+    }
+    std::wstring name;
+    if (auto res = lexer.expect_identifier(); !res.has_value()) {
+        parser.append(res.error(), "Expected type name in `C` style struct declaration");
+        return {};
+    } else {
+        name = parser.text_of(res.value());
+    }
+    lexer.accept_symbol(';');
+
+    return parser.make_node<Struct>(
+        struct_start + lexer.last_location,
+        name,
+        fields);
+}
+
+ASTNode parse_c_enum(Parser &parser)
+{
+    auto &lexer { parser.lexer };
+    auto  struct_start { lexer.last_location };
+    lexer.accept_identifier();
+    if (!lexer.expect_symbol('{')) {
+        parser.append(lexer.last_location, "Expected `{` in `C` style enum definition");
+        return {};
+    }
+    ASTNodes values;
+    int      value { 0 };
+    while (true) {
+        if (lexer.accept_symbol('}')) {
+            break;
+        }
+
+        std::wstring  value_label;
+        TokenLocation start;
+        if (auto res = lexer.expect_identifier(); !res.has_value()) {
+            parser.append(res.error(), "Expected enum value label");
+            return {};
+        } else {
+            value_label = parser.text_of(res.value());
+            start = res.value().location;
+        }
+
+        ASTNode value {};
+        if (lexer.accept_symbol('=')) {
+            if (auto res { lexer.expect_number() }; !res) {
+                parser.append(res.error(), "Expected numeric value after `=` in `C` style enum value definition");
+            } else {
+                value = parser.make_node<Number>((*res).location, parser.text_of(*res), (*res).radix());
+            }
+        }
+
+        values.emplace_back(parser.make_node<EnumValue>(start + lexer.last_location, value_label, value, ASTNode {}));
+        if (lexer.accept_symbol('}')) {
+            break;
+        }
+        if (auto res = lexer.expect_symbol(','); !res.has_value()) {
+            parser.append(res.error(), "Expected `,` in `C` style enum definition");
+        }
+    }
+    std::wstring name;
+    if (auto res = lexer.expect_identifier(); !res.has_value()) {
+        parser.append(res.error(), "Expected type name in `C` style enum definition");
+        return {};
+    } else {
+        name = parser.text_of(res.value());
+    }
+    lexer.accept_symbol(';');
+
+    return parser.make_node<Enum>(
+        struct_start + lexer.last_location,
+        name,
+        ASTNode {},
+        values);
+}
+
+ASTNode parse_c_typedef(Parser &parser)
+{
+    auto &lexer { parser.lexer };
+
+    if (lexer.accept_keyword(LiaKeyword::Struct)) {
+        return parse_c_struct(parser);
+    } else if (lexer.accept_keyword(LiaKeyword::Enum)) {
+        return parse_c_enum(parser);
+    } else if (lexer.next_matches(TokenKind::Identifier)) {
+        auto aliased_type = parse_c_type(parser);
+        if (aliased_type == nullptr) {
+            parser.append(lexer.peek(), "Expected type in typedef");
+            return {};
+        }
+        std::wstring  alias_name;
+        TokenLocation start;
+        if (auto res = lexer.expect_identifier(); !res.has_value()) {
+            parser.append(res.error(), "Expected typedef-ed name");
+            return {};
+        } else {
+            alias_name = parser.text_of(res.value());
+            start = res.value().location;
+        }
+        lexer.accept_symbol(';');
+        return parser.make_node<Alias>(aliased_type->location + lexer.last_location, alias_name, aliased_type);
+    } else {
+        parser.append(lexer.last_location, "Expected `struct` or `enum` or a type specification after `typedef` in extern block, got `{}`", TokenKind_name(lexer.peek().kind));
+        return {};
+    }
+}
+
+ASTNode parse_extern(Parser &parser)
+{
+    auto &lexer { parser.lexer };
+    auto  ext { lexer.lex() };
+
+    auto res = lexer.expect(TokenKind::QuotedString);
+    if (!res.has_value() || res.value().quoted_string().quote_type != QuoteType::DoubleQuote) {
+        parser.append(res.error(), "Expected extern library name");
+        return {};
+    }
+    auto library = parser.text_of(res.value());
+    if (library.length() <= 2) {
+        parser.append(res.value(), "Invalid extern library name");
+        return {};
+    }
+    library = library.substr(0, library.size() - 1).substr(1);
+
+    if (!lexer.expect_symbol('{')) {
+        parser.append(lexer.last_location, "Expected '{");
+    }
+    ASTNodes functions;
+    while (true) {
+        if (lexer.accept_symbol('}')) {
+            break;
+        }
+        auto    token { lexer.peek() };
+        ASTNode decl {};
+        auto    bookmark { lexer.bookmark() };
+        if (lexer.accept_keyword(LiaKeyword::Func)) {
+            decl = parse_func_decl(parser, token);
+        } else if (auto ident { lexer.accept_identifier() }; ident) {
+            if (parser.text_of(*ident) == L"typedef") {
+                decl = parse_c_typedef(parser);
+            } else {
+                lexer.push_back(bookmark);
+                decl = parse_c_func_decl(parser);
+            }
+        }
+        if (!decl) {
+            parser.append(lexer.last_location, "Expected function or type declaration in `extern` block");
+            return {};
+        }
+        functions.emplace_back(decl);
+    }
+
+    return parser.make_node<Extern>(
+        ext.location + res.value().location,
+        functions,
+        std::wstring { library });
+}
+
 ASTNode Parser::parse_for()
 {
     Label         label;
@@ -950,91 +1437,14 @@ ASTNode Parser::parse_for()
 
 ASTNode Parser::parse_func()
 {
-    auto func = lexer.lex();
     auto old_level = level;
-    level = ParseLevel::Function;
-    std::wstring name;
-    if (auto res = lexer.expect_identifier(); !res.has_value()) {
-        append(res.error(), "Expected function name");
-        level = old_level;
-        return {};
-    } else {
-        name = text_of(res.value());
-    }
-
-    ASTNodes generics;
-    if (lexer.accept_symbol('<')) {
-        while (true) {
-            if (lexer.accept_symbol('>')) {
-                break;
-            }
-            std::wstring  generic_name;
-            TokenLocation start;
-            if (auto res = lexer.expect_identifier(); !res.has_value()) {
-                append(res.error(), "Expected generic name");
-                level = old_level;
-                return {};
-            } else {
-                generics.emplace_back(make_node<Identifier>(res.value().location, text_of(res.value())));
-            }
-            if (lexer.accept_symbol('>')) {
-                break;
-            }
-            if (auto res = lexer.expect_symbol(','); !res.has_value()) {
-                append(res.error(), "Expected ',' in function signature generic list");
-            }
-        }
-    }
-
-    if (auto res = lexer.expect_symbol('('); !res.has_value()) {
-        append(res.error(), "Expected '(' in function definition");
-    }
-    ASTNodes params;
-    while (true) {
-        if (lexer.accept_symbol(')')) {
-            break;
-        }
-        std::wstring  param_name;
-        TokenLocation start;
-        if (auto res = lexer.expect_identifier(); !res.has_value()) {
-            append(res.error(), "Expected parameter name");
-            level = old_level;
-            return {};
-        } else {
-            param_name = text_of(res.value());
-            start = res.value().location;
-        }
-        if (auto res = lexer.expect_symbol(':'); !res.has_value()) {
-            append(res.error(), "Expected ':' in function parameter declaration");
-        }
-        auto          param_type = parse_type();
-        TokenLocation end;
-        if (param_type == nullptr) {
-            append(lexer.peek(), "Expected parameter type");
-            level = old_level;
-            return {};
-        }
-        params.emplace_back(make_node<Parameter>(start + param_type->location, param_name, param_type));
-        if (lexer.accept_symbol(')')) {
-            break;
-        }
-        if (auto res = lexer.expect_symbol(','); !res.has_value()) {
-            append(res.error(), "Expected ',' in function signature");
-        }
-    }
-    auto          return_type = parse_type();
-    TokenLocation return_type_loc;
-    if (return_type == nullptr) {
-        append(lexer.peek(), "Expected return type");
+    level = Parser::ParseLevel::Function;
+    auto func = lexer.lex();
+    auto decl { parse_func_decl(*this, func) };
+    if (!decl) {
         level = old_level;
         return {};
     }
-    auto decl = make_node<FunctionDeclaration>(
-        func.location + return_type->location,
-        name,
-        generics,
-        params,
-        return_type);
     if (lexer.accept_keyword(LiaKeyword::ExternLink)) {
         if (auto res = lexer.expect(TokenKind::QuotedString); !res.has_value() || res.value().quoted_string().quote_type != QuoteType::DoubleQuote) {
             append(res.error(), "Expected extern function name");
@@ -1044,6 +1454,7 @@ ASTNode Parser::parse_func()
             auto name = text_of(res.value());
             if (name.length() <= 2) {
                 append(res.value(), "Invalid extern function name");
+                return {};
             }
             name = name.substr(0, name.size() - 1).substr(1);
             level = old_level;

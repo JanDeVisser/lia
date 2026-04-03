@@ -163,6 +163,7 @@ struct VoidType {
 };
 
 struct PointerType {
+    pType        referencing;
     std::wstring to_string() const
     {
         return L"Pointer";

@@ -96,6 +96,12 @@ bool is_constant(ASTNode const &n)
         n->node);
 }
 
+Alias::Alias(std::wstring name, ASTNode aliased_type)
+    : name(std::move(name))
+    , aliased_type(std::move(aliased_type))
+{
+}
+
 Block::Block(ASTNodes statements)
     : statements(std::move(statements))
 {
@@ -190,6 +196,12 @@ UnaryExpression::UnaryExpression(Operator const op, ASTNode operand)
 
 ExpressionList::ExpressionList(ASTNodes expressions)
     : expressions(std::move(expressions))
+{
+}
+
+Extern::Extern(ASTNodes declarations, std::wstring library)
+    : declarations(std::move(declarations))
+    , library(std::move(library))
 {
 }
 

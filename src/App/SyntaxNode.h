@@ -28,6 +28,7 @@ using namespace Util;
 
 #define SyntaxNodeTypes(S) \
     S(Dummy)               \
+    S(Alias)               \
     S(BinaryExpression)    \
     S(Block)               \
     S(BoolConstant)        \
@@ -42,6 +43,7 @@ using namespace Util;
     S(Enum)                \
     S(EnumValue)           \
     S(ExpressionList)      \
+    S(Extern)              \
     S(ExternLink)          \
     S(ForStatement)        \
     S(FunctionDeclaration) \
@@ -198,6 +200,13 @@ struct Namespace {
     void                   register_variable(std::wstring name, ASTNode node);
 };
 
+struct Alias {
+    std::wstring name;
+    ASTNode      aliased_type;
+
+    Alias(std::wstring name, ASTNode aliased_type);
+};
+
 struct BinaryExpression {
     ASTNode  lhs;
     Operator op;
@@ -293,6 +302,13 @@ struct ExpressionList {
     ASTNodes expressions;
 
     explicit ExpressionList(ASTNodes expressions);
+};
+
+struct Extern {
+    ASTNodes     declarations;
+    std::wstring library;
+
+    Extern(ASTNodes declarations, std::wstring library);
 };
 
 struct ExternLink {
@@ -543,6 +559,10 @@ struct OptionalDescriptionNode {
     ASTNode optional_of;
 };
 
+struct PointerDescriptionNode {
+    ASTNode referencing;
+};
+
 struct ResultDescriptionNode {
     ASTNode success;
     ASTNode error;
@@ -556,6 +576,7 @@ using TypeSpecificationDescription = std::variant<
     ArrayDescriptionNode,
     DynArrayDescriptionNode,
     OptionalDescriptionNode,
+    PointerDescriptionNode,
     ResultDescriptionNode>;
 
 template<class S>
@@ -566,6 +587,7 @@ concept is_type_specification = std::is_same_v<S, TypeNameNode>
     || std::is_same_v<S, ArrayDescriptionNode>
     || std::is_same_v<S, DynArrayDescriptionNode>
     || std::is_same_v<S, OptionalDescriptionNode>
+    || std::is_same_v<S, PointerDescriptionNode>
     || std::is_same_v<S, ResultDescriptionNode>;
 
 struct TypeSpecification {
@@ -645,6 +667,7 @@ bool is_constant()
 bool is_constant(ASTNode const &n);
 
 using SyntaxNode = std::variant<Dummy,
+    Alias,
     BinaryExpression,
     Block,
     BoolConstant,
@@ -659,6 +682,7 @@ using SyntaxNode = std::variant<Dummy,
     Enum,
     EnumValue,
     ExpressionList,
+    Extern,
     ExternLink,
     ForStatement,
     FunctionDeclaration,

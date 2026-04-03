@@ -901,6 +901,14 @@ public:
         return lex();
     }
 
+    LexerResult expect_number()
+    {
+        if (auto ret = peek(); ret.kind != TokenKind::Number) {
+            return std::unexpected(LexerErrorMessage { location(), "Expected number" });
+        }
+        return lex();
+    }
+
     std::optional<Token> accept_number()
     {
         if (auto ret = peek(); ret.kind != TokenKind::Number) {

@@ -69,6 +69,12 @@ pType resolve(OptionalDescriptionNode const &d, ASTNode const &n)
 }
 
 template<>
+pType resolve(PointerDescriptionNode const &d, ASTNode const &n)
+{
+    return TypeRegistry::the().pointer_to(resolve(d.referencing));
+}
+
+template<>
 pType resolve(ResultDescriptionNode const &d, ASTNode const &n)
 {
     return TypeRegistry::the().result_of(resolve(d.success), resolve(d.error));

@@ -8,6 +8,7 @@
 #include <ranges>
 #include <string>
 
+#include <Util/StringUtil.h>
 #include <Util/Utf8.h>
 
 #include <App/Operator.h>
@@ -18,6 +19,8 @@
 #include <App/QBE/QBE.h>
 
 namespace Lia {
+
+using namespace std::literals;
 
 #define try_bind(expr)                                                 \
     (                                                                  \
@@ -156,6 +159,20 @@ static ASTNode instantiate(ASTNode n, std::vector<pType> const &generic_args)
 template<class N>
 BindResult bind(ASTNode n, N &impl)
 {
+    return nullptr;
+}
+
+template<>
+BindResult bind(ASTNode n, Alias &impl)
+{
+    Parser &parser { *n.repo };
+    try_bind(impl.aliased_type);
+    if (impl.aliased_type->bound_type != nullptr) {
+        auto aliased_type { get<TypeType>(impl.aliased_type->bound_type).type };
+        auto type { TypeRegistry::the().alias_for(aliased_type) };
+        parser.register_type(impl.name, type);
+        return make_type(impl.name, TypeType { .type = type });
+    }
     return nullptr;
 }
 
@@ -777,11 +794,14 @@ BindResult bind(ASTNode n, Enum &impl)
             underlying_type = TypeRegistry::i32;
         }
         enoom.underlying_type = underlying_type;
-        for (auto const &[ix, v] : std::views::enumerate(impl.values)) {
+        int64_t value { -1 };
+        for (auto const v : impl.values) {
             auto enum_value = get<EnumValue>(v);
-            // TODO there are many ways the numbering of enum values can get
-            // confused.
-            size_t value = (enum_value.value != nullptr) ? get<int64_t>(get<Number>(enum_value.value)) : ix;
+            if (enum_value.value != nullptr) {
+                value = get<int64_t>(get<Number>(enum_value.value));
+            } else {
+                ++value;
+            }
             enoom.values.emplace_back(enum_value.label, value);
         }
     } else if (is_tagged_union) {
@@ -834,6 +854,15 @@ template<>
 BindResult bind(ASTNode n, ExpressionList &impl)
 {
     return TypeRegistry::the().typelist_of(try_bind_nodes(impl.expressions));
+}
+
+template<>
+BindResult bind(ASTNode n, Extern &impl)
+{
+    for (auto const &func : impl.declarations) {
+        try_bind(func);
+    }
+    return TypeRegistry::void_;
 }
 
 template<>

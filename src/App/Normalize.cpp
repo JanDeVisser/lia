@@ -29,6 +29,12 @@ ASTNode normalize(ASTNode n, N const &impl)
 }
 
 template<>
+ASTNode normalize(ASTNode n, Alias const &impl)
+{
+    return make_node<Alias>(n, impl.name, normalize(impl.aliased_type));
+}
+
+template<>
 ASTNode normalize(ASTNode n, BinaryExpression const &impl)
 {
     auto make_expression_list = [n]() -> ASTNode {
@@ -209,6 +215,27 @@ template<>
 ASTNode normalize(ASTNode n, ExpressionList const &impl)
 {
     return make_node<ExpressionList>(n, normalize(impl.expressions));
+}
+
+template<>
+ASTNode normalize(ASTNode n, Extern const &impl)
+{
+    Parser  &parser { *n.repo };
+    ASTNodes normalized;
+    for (auto const &decl : impl.declarations) {
+        if (is<FunctionDeclaration>(decl)) {
+            auto const &name { get<FunctionDeclaration>(decl).name };
+            normalized.emplace_back(
+                normalize(parser.make_node<FunctionDefinition>(
+                    decl->location,
+                    name,
+                    decl,
+                    parser.make_node<ExternLink>(decl->location, std::format(L"{}:{}", impl.library, name)))));
+        } else {
+            normalized.emplace_back(normalize(decl));
+        }
+    }
+    return make_node<Extern>(n, normalized, impl.library);
 }
 
 template<>
@@ -460,6 +487,9 @@ ASTNode normalize(ASTNode n, TypeSpecification const &impl)
             },
             [](OptionalDescriptionNode const &d) -> TypeSpecificationDescription {
                 return OptionalDescriptionNode { normalize(d.optional_of) };
+            },
+            [](PointerDescriptionNode const &d) -> TypeSpecificationDescription {
+                return PointerDescriptionNode { normalize(d.referencing) };
             },
             [](ResultDescriptionNode const &d) -> TypeSpecificationDescription {
                 return ResultDescriptionNode {

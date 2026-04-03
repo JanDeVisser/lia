@@ -22,6 +22,7 @@
 
 namespace Lia {
 
+using namespace std::literals;
 using namespace Util;
 
 IntType   IntType::u8 { false, 8, std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::min() };
@@ -64,13 +65,13 @@ std::wstring FunctionType::to_string() const
 {
     return std::format(
         L"Func({}) {}",
-        join_elements(parameters, std::wstring_view { L", " }, [](pType const &t) { return type_name(t); }),
+        join_elements(parameters, L", "sv, [](pType const &t) { return type_name(t); }),
         result->name);
 }
 
 std::wstring TypeList::to_string() const
 {
-    return std::format(L"({})", join_elements(types, std::wstring_view { L", " }, [](pType const &t) { return type_name(t); }));
+    return std::format(L"({})", join_elements(types, L", "sv, [](pType const &t) { return type_name(t); }));
 }
 
 intptr_t TypeList::size_of() const
@@ -574,7 +575,7 @@ TypeRegistry::TypeRegistry()
     cstring = make_type(L"cstring", ZeroTerminatedArray { TypeRegistry::u8 });
     character = make_type(L"char", TypeAlias { TypeRegistry::u32 });
     void_ = make_type(L"void", VoidType {});
-    pointer = make_type(L"pointer", PointerType {});
+    pointer = make_type(L"pointer", PointerType { void_ });
 }
 
 TypeRegistry &TypeRegistry::the()
@@ -605,18 +606,39 @@ pType TypeRegistry::referencing(pType type)
 {
     assert(type);
     for (auto const &t : types) {
-        if (std::visit(overloads {
-                           [&type](ReferenceType const descr) -> bool {
-                               return descr.referencing == type;
-                           },
-                           [](auto const &) -> bool {
-                               return false;
-                           } },
+        if (std::visit(
+                overloads {
+                    [&type](ReferenceType const descr) -> bool {
+                        return descr.referencing == type;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
                 t.description)) {
             return t.id;
         }
     }
     auto ret = make_type(std::format(L"&{}", type->name), ReferenceType { type });
+    return ret;
+}
+
+pType TypeRegistry::pointer_to(pType type)
+{
+    assert(type);
+    for (auto const &t : types) {
+        if (std::visit(
+                overloads {
+                    [&type](PointerType const descr) -> bool {
+                        return descr.referencing == type;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
+                t.description)) {
+            return t.id;
+        }
+    }
+    auto ret = make_type(std::format(L"*{}", type->name), PointerType { type });
     return ret;
 }
 
@@ -873,7 +895,6 @@ pType TypeRegistry::type_of(pType type)
     auto ret = make_type(std::format(L"meta({})", type->name), TypeType { type });
     return ret;
 }
-
 }
 
 std::wostream &operator<<(std::wostream &os, Lia::pType const &type)

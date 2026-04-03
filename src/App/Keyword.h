@@ -29,6 +29,7 @@ using Precedence = uint16_t;
     S(AssignShiftLeft, "<<=")  \
     S(AssignShiftRight, ">>=") \
     S(AssignXor, "^=")         \
+    S(Alias, "alias")          \
     S(Break, "break")          \
     S(Cast, "::")              \
     S(Const, "const")          \
@@ -39,6 +40,7 @@ using Precedence = uint16_t;
     S(Enum, "enum")            \
     S(Equals, "==")            \
     S(Error, "error")          \
+    S(Extern, "extern")        \
     S(ExternLink, "->")        \
     S(False, "false")          \
     S(For, "for")              \

@@ -223,6 +223,12 @@ std::wstring to_string(ASTNode const &, Expr const &impl)
 }
 
 template<>
+std::wstring to_string(ASTNode const &, Alias const &impl)
+{
+    return std::format(L"{} = {}", impl.name, to_string(impl.aliased_type));
+}
+
+template<>
 std::wstring to_string(ASTNode const &, BoolConstant const &impl)
 {
     return (impl.value) ? L"True" : L"False";
@@ -294,6 +300,12 @@ std::wstring to_string(ASTNode const &n, EnumValue const &impl)
         ret += L")";
     }
     return ret;
+}
+
+template<>
+std::wstring to_string(ASTNode const &n, Extern const &impl)
+{
+    return std::format(L"{} function in library `{}`", impl.declarations.size(), impl.library);
 }
 
 template<>
@@ -425,6 +437,9 @@ std::wstring to_string(ASTNode const &n, TypeSpecification const &impl)
             },
             [](OptionalDescriptionNode const &d) -> std::wstring {
                 return std::format(L"{}?", to_string(d.optional_of));
+            },
+            [](PointerDescriptionNode const &d) -> std::wstring {
+                return std::format(L"{}*", to_string(d.referencing));
             },
             [](ResultDescriptionNode const &d) -> std::wstring {
                 return std::format(L"{}/{}", to_string(d.success), to_string(d.error));

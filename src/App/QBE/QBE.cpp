@@ -592,6 +592,12 @@ static GenBinExpr make_binexpr(ASTNode const &n, QBEOperand lhs, Operator op, QB
 }
 
 template<>
+GenResult generate_qbe_node(ASTNode const &n, Alias const &impl, QBEContext &ctx)
+{
+    return QBEOperand { n, ILValue::null() };
+}
+
+template<>
 GenResult generate_qbe_node(ASTNode const &n, BinaryExpression const &impl, QBEContext &ctx)
 {
     assert(impl.lhs->bound_type != nullptr);
@@ -895,6 +901,12 @@ GenResult generate_qbe_node(ASTNode const &n, ExpressionList const &impl, QBECon
         align = std::max(align, align_of(type));
     }
     return QBEOperand { n, ILValue::sequence(values, align, size) };
+}
+
+template<>
+GenResult generate_qbe_node(ASTNode const &n, Extern const &impl, QBEContext &ctx)
+{
+    return QBEOperand { n, ILValue::null() };
 }
 
 template<>

@@ -1,7 +1,8 @@
 import raylib
 
-public func main() i32 {
+export func main() i32 {
     raylib.InitWindow(800::i32, 600::i32, `Lia Speedrun`)
+    raylib.SetTargetFPS(60::i32);
     while (!raylib.WindowShouldClose()) {
         raylib.BeginDrawing()
         color: raylib.Color = { 0xFF::u8, 0::u8, 0x0::u8, 0xFF::u8 }

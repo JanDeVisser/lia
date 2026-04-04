@@ -1379,6 +1379,9 @@ ASTNode parse_extern(Parser &parser)
         auto    bookmark { lexer.bookmark() };
         if (lexer.accept_keyword(LiaKeyword::Func)) {
             decl = parse_func_decl(parser, token);
+        } else if (lexer.accept_keyword(LiaKeyword::Const)) {
+            lexer.push_back(bookmark);
+            decl = parse_c_func_decl(parser);
         } else if (auto ident { lexer.accept_identifier() }; ident) {
             if (parser.text_of(*ident) == L"typedef") {
                 decl = parse_c_typedef(parser);

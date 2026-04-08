@@ -177,6 +177,12 @@ BindResult bind(ASTNode n, Alias &impl)
 }
 
 template<>
+BindResult bind(ASTNode n, ArgumentList &impl)
+{
+    return TypeRegistry::the().typelist_of(try_bind_nodes(impl.arguments));
+}
+
+template<>
 BindResult bind(ASTNode n, BinaryExpression &impl)
 {
     assert(n != nullptr);
@@ -233,14 +239,29 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
                 return type_type;
             };
         }
-        if (lhs_type->kind() != TypeKind::ReferenceType && !is<Identifier>(impl.lhs)) {
+        if ((lhs_type->kind() != TypeKind::ModuleType) && (lhs_type->kind() != TypeKind::ReferenceType && !is<Identifier>(impl.lhs))) {
             return parser.bind_error(
                 impl.lhs->location,
-                L"Left hand side of member access operator must be value reference");
+                L"Left hand side of member access operator must be value reference or module");
         }
         auto lhs_value_type = lhs_type->value_type();
         return std::visit(
             overloads {
+                [&parser, &impl, &n](ModuleType const &) -> BindResult {
+                    auto       proxy { get<ModuleProxy>(impl.lhs) };
+                    auto const label { get<Identifier>(impl.rhs).identifier };
+                    auto       t { proxy.module->ns->type_of(label) };
+                    if (t == nullptr) {
+                        return BindError { ASTStatus::Undetermined };
+                    }
+                    impl.rhs->bound_type = t;
+                    impl.rhs->status = ASTStatus::Bound;
+                    auto var { proxy.module->ns->find_variable(label) };
+                    if (var != nullptr && is_constant(var)) {
+                        n->superceded_by = get<VariableDeclaration>(var).initializer;
+                    }
+                    return t;
+                },
                 [&parser, &impl](StructType const &strukt) -> BindResult {
                     auto find_member = [&strukt, &parser, &impl](std::wstring_view const name) -> std::expected<StructType::Field, std::wstring> {
                         for (auto const &field : strukt.fields) {
@@ -459,7 +480,7 @@ BindResult bind(ASTNode n, Call &impl)
 
     auto                      arg_types = try_bind(impl.arguments);
     auto const               &type_descr = get<TypeList>(arg_types);
-    auto                     &args { get<ExpressionList>(impl.arguments).expressions };
+    auto                     &args { get<ArgumentList>(impl.arguments).arguments };
     std::wstring              name;
     std::vector<std::wstring> names;
     ASTNodes                  type_args {};
@@ -470,19 +491,10 @@ BindResult bind(ASTNode n, Call &impl)
         name = stamped_id->identifier;
         type_args = stamped_id->arguments;
         names = { name };
-    } else if (is<ExpressionList>(impl.callable)) {
-        auto const &callable { get<ExpressionList>(impl.callable) };
-        std::ranges::for_each(
-            callable.expressions | std::views::enumerate,
-            [&name, &names](auto const &expr) {
-                auto const &[ix, id] = expr;
-                if (ix > 0) {
-                    name += '.';
-                }
-                auto &n { get<Identifier>(id).identifier };
-                name += n;
-                names.emplace_back(n);
-            });
+    } else if (is<IdentifierList>(impl.callable)) {
+        auto const &callable { get<IdentifierList>(impl.callable) };
+        names = callable.identifiers;
+        name = join(callable.identifiers, L"."sv);
     }
 
     // function = parser.find_function_by_arg_list(id->identifier, arg_types);
@@ -521,7 +533,7 @@ BindResult bind(ASTNode n, Call &impl)
                 }
             }
             if (made_reference_node) {
-                impl.arguments = normalize(make_node<ExpressionList>(impl.arguments, reference_nodes));
+                impl.arguments = normalize(make_node<ArgumentList>(impl.arguments, reference_nodes));
                 try_bind(impl.arguments);
             }
             return func_def;
@@ -925,13 +937,24 @@ template<class N>
     requires std::is_same_v<N, Identifier> || std::is_same_v<N, StampedIdentifier>
 BindResult bind(ASTNode n, N &impl)
 {
-    auto const &type = n.repo->type_of({ impl.identifier });
+    Parser     &parser { *(n.repo) };
+    auto const &type = parser.namespaces.back()->type_of(impl.identifier);
     if (type == nullptr) {
-        if (n.repo->pass == 0) {
+        if (parser.pass == 0) {
             return BindError { ASTStatus::Undetermined };
         } else {
             return n.bind_error(L"Unresolved identifier `{}`", impl.identifier);
         }
+    }
+    if (is<ModuleType>(type)) {
+        auto proxy { parser.namespaces.back()->find_module(impl.identifier) };
+        auto ret = make_node<ModuleProxy>(n, impl.identifier, get<ModuleProxy>(proxy).module);
+        ret->bound_type = type;
+        ret->status = ASTStatus::Bound;
+    }
+    auto var { parser.namespaces.back()->find_variable(impl.identifier) };
+    if (var != nullptr && is_constant(var) && is<VariableDeclaration>(var)) {
+        n->superceded_by = get<VariableDeclaration>(var).initializer;
     }
     return type;
 }

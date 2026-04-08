@@ -503,7 +503,6 @@ GenResult variable_decl(ASTNode const &n, std::wstring const &name, pType const 
     auto        var_ref = ILValue::variable(binding.index, ILBaseType::L);
     QBEOperand  operand { n, var_ref, type };
     if (init != nullptr) {
-        info(L"VARIABLE_DECL {} {} = {}", name, operand.ptype->to_string(), as_wstring(SyntaxNodeType_name(init->type())));
         return assign(operand, init, ctx);
     }
     return operand;
@@ -595,6 +594,25 @@ template<>
 GenResult generate_qbe_node(ASTNode const &n, Alias const &impl, QBEContext &ctx)
 {
     return QBEOperand { n, ILValue::null() };
+}
+
+template<>
+GenResult generate_qbe_node(ASTNode const &n, ArgumentList const &impl, QBEContext &ctx)
+{
+    ILValues values;
+    int      align = 0;
+    int      size = 0;
+    for (auto const &expr : impl.arguments) {
+        QBEOperand operand { TRY_GENERATE(expr, ctx) };
+        values.emplace_back(TRY_DEREFERENCE(operand, ctx).get_value());
+        auto const &type = values.back().type;
+        if (size > 0) {
+            size = alignat(size, align_of(type));
+        }
+        size += size_of(type);
+        align = std::max(align, align_of(type));
+    }
+    return QBEOperand { n, ILValue::sequence(values, align, size) };
 }
 
 template<>
@@ -693,7 +711,7 @@ GenResult generate_qbe_node(ASTNode const &n, Call const &impl, QBEContext &ctx)
         ret_alloc = ILValue::temporary(temp.index, temp.type);
     }
 
-    for (auto const &[arg, param] : std::ranges::views::zip(get<ExpressionList>(impl.arguments).expressions, decl.parameters)) {
+    for (auto const &[arg, param] : std::ranges::views::zip(get<ArgumentList>(impl.arguments).arguments, decl.parameters)) {
         trace(L"  Argument `{}`: {} param type {}", get<Parameter>(param).name, arg->bound_type->name, param->bound_type->name);
         if (is<ReferenceType>(param->bound_type)) {
             trace("param is reference");
@@ -991,6 +1009,7 @@ GenResult generate_qbe_node(ASTNode const &n, FunctionDefinition const &impl, QB
         TRY_GENERATE(impl.declaration, ctx);
         TRY_GENERATE(impl.implementation, ctx);
         ctx.is_export = false;
+        ctx.current_function = ctx.program.files[ctx.current_file].functions.size();
     }
     return QBEOperand { n, ILValue::null() };
 }
@@ -1194,7 +1213,10 @@ GenResult generate_qbe_node(ASTNode const &n, TagValue const &impl, QBEContext &
 template<>
 GenResult generate_qbe_node(ASTNode const &n, VariableDeclaration const &impl, QBEContext &ctx)
 {
-    return variable_decl(n, impl.name, n->bound_type, impl.initializer, ctx);
+    if (!is_constant(n)) {
+        return variable_decl(n, impl.name, n->bound_type, impl.initializer, ctx);
+    }
+    return QBEOperand { n, ILValue::null() };
 }
 
 template<>

@@ -1472,3 +1472,32 @@ void SetAudioStreamBufferSizeDefault(int size);                 // Default size 
 //void DetachAudioMixedProcessor(AudioCallback processor); // Detach audio stream processor from the entire audio pipeline
 }
 
+// Some Basic Colors
+// NOTE: Custom raylib color palette for amazing visuals on WHITE background
+const LIGHTGRAY: Color = { 200::u8, 200::u8, 200::u8, 255::u8 } // Light Gray
+const GRAY: Color = { 130::u8, 130::u8, 130::u8, 255::u8 }      // Gray
+const DARKGRAY: Color = { 80::u8, 80::u8, 80::u8, 255::u8 }     // Dark Gray
+const YELLOW: Color = { 253::u8, 249::u8, 0::u8, 255::u8 }      // Yellow
+const GOLD: Color = { 255::u8, 203::u8, 0::u8, 255::u8 }        // Gold
+const ORANGE: Color = { 255::u8, 161::u8, 0::u8, 255::u8 }      // Orange
+const PINK: Color = { 255::u8, 109::u8, 194::u8, 255::u8 }      // Pink
+const RED: Color = { 230::u8, 41::u8, 55::u8, 255::u8 }         // Red
+const MAROON: Color = { 190::u8, 33::u8, 55::u8, 255::u8 }      // Maroon
+const GREEN: Color = { 0::u8, 228::u8, 48::u8, 255::u8 }        // Green
+const LIME: Color = { 0::u8, 158::u8, 47::u8, 255::u8 }         // Lime
+const DARKGREEN: Color = { 0::u8, 117::u8, 44::u8, 255::u8 }    // Dark Green
+const SKYBLUE: Color = { 102::u8, 191::u8, 255::u8, 255::u8 }   // Sky Blue
+const BLUE: Color = { 0::u8, 121::u8, 241::u8, 255::u8 }        // Blue
+const DARKBLUE: Color = { 0::u8, 82::u8, 172::u8, 255::u8 }     // Dark Blue
+const PURPLE: Color = { 200::u8, 122::u8, 255::u8, 255::u8 }    // Purple
+const VIOLET: Color = { 135::u8, 60::u8, 190::u8, 255::u8 }     // Violet
+const DARKPURPLE: Color = { 112::u8, 31::u8, 126::u8, 255::u8 } // Dark Purple
+const BEIGE: Color = { 211::u8, 176::u8, 131::u8, 255::u8 }     // Beige
+const BROWN: Color = { 127::u8, 106::u8, 79::u8, 255::u8 }      // Brown
+const DARKBROWN: Color = { 76::u8, 63::u8, 47::u8, 255::u8 }    // Dark Brown
+const WHITE: Color = { 255::u8, 255::u8, 255::u8, 255::u8 }     // White
+const BLACK: Color = { 0::u8, 0::u8, 0::u8, 255::u8 }           // Black
+const BLANK: Color = { 0::u8, 0::u8, 0::u8, 0::u8 }             // Blank (Transparent)
+const MAGENTA: Color = { 255::u8, 0::u8, 255::u8, 255::u8 }     // Magenta
+const RAYWHITE: Color = { 245::u8, 245::u8, 245::u8, 255::u8 }  // My own White (raylib logo)
+

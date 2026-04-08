@@ -1895,6 +1895,16 @@ bool Parser::has_variable(Strings const &name) const
         });
 }
 
+ASTNode Parser::find_variable(Strings const &name) const
+{
+    return find_in_node<ASTNode>(
+        *this,
+        name,
+        [](NSNode const &ns, std::wstring const &n) -> ASTNode {
+            return ns->find_variable(n);
+        });
+}
+
 void Parser::register_function(std::wstring name, ASTNode fnc)
 {
     assert(!namespaces.empty());

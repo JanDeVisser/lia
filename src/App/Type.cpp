@@ -53,6 +53,7 @@ pType TypeRegistry::cstring;
 pType TypeRegistry::character;
 pType TypeRegistry::void_;
 pType TypeRegistry::pointer;
+pType TypeRegistry::module;
 
 TypeRegistry TypeRegistry::s_registry {};
 
@@ -719,6 +720,7 @@ TypeRegistry::TypeRegistry()
     character = make_type(L"char", TypeAlias { TypeRegistry::u32 });
     void_ = make_type(L"void", VoidType {});
     pointer = make_type(L"pointer", PointerType { void_ });
+    module = make_type(L"module", ModuleType {});
 }
 
 TypeRegistry &TypeRegistry::the()

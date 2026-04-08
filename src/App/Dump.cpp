@@ -35,6 +35,16 @@ void dump(ASTNode const &n, N const &impl, std::wostream &os, int indent)
 }
 
 template<>
+void dump(ASTNode const &n, ArgumentList const &impl, std::wostream &os, int indent)
+{
+    print_indent(os, indent);
+    os << "#expressions: " << impl.arguments.size() << "\n";
+    for (auto const &expr : impl.arguments) {
+        dump(expr, os, indent + 4);
+    }
+}
+
+template<>
 void dump(ASTNode const &, BinaryExpression const &impl, std::wostream &os, int const indent)
 {
     dump(impl.lhs, os, indent + 4);
@@ -362,6 +372,12 @@ template<class N>
 std::wstring to_string(ASTNode const &, N const &impl)
 {
     return impl.identifier;
+}
+
+template<>
+std::wstring to_string(ASTNode const &n, IdentifierList const &impl)
+{
+    return join(impl.identifiers, L"."sv);
 }
 
 template<>

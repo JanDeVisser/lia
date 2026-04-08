@@ -1029,4 +1029,12 @@ ILTemporary const &ILFunction::add_temporary(pType const &type, ILType il_type)
     return temps.emplace_back(temps.size(), type, std::move(il_type));
 }
 
+ILBinding const &ILFile::add(std::wstring_view name, pType const &type)
+{
+    info(L"Adding {} size {}", name, variables.size());
+    auto &ret { variables.emplace_back(std::wstring { name }, type, variables.size(), qbe_type(type)) };
+    info(L"After adding {} size {}", name, variables.size());
+    return ret;
+}
+
 }

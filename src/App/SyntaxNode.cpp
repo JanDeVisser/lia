@@ -88,17 +88,51 @@ void ASTNodeImpl::init_namespace()
     parser.push_namespace(id);
 }
 
+template<typename N>
+bool is_constant(ASTNode const &, N const &impl)
+{
+    return false;
+}
+
+template<Constant C>
+bool is_constant(ASTNode const &, C const &impl)
+{
+    return true;
+}
+
+template<>
+bool is_constant(ASTNode const &n, ExpressionList const &impl)
+{
+    return std::ranges::all_of(
+        impl.expressions,
+        [](ASTNode const &expr) -> bool {
+            return is_constant(expr);
+        });
+}
+
+template<>
+bool is_constant(ASTNode const &n, VariableDeclaration const &impl)
+{
+    return impl.is_const && impl.initializer != nullptr && is_constant(impl.initializer);
+}
+
 bool is_constant(ASTNode const &n)
 {
-    return std::visit([](auto const &impl) -> bool {
-        return is_constant<decltype(impl)>();
-    },
+    return std::visit(
+        [&n](auto const &impl) -> bool {
+            return is_constant(n, impl);
+        },
         n->node);
 }
 
 Alias::Alias(std::wstring name, ASTNode aliased_type)
     : name(std::move(name))
     , aliased_type(std::move(aliased_type))
+{
+}
+
+ArgumentList::ArgumentList(ASTNodes arguments)
+    : arguments(std::move(arguments))
 {
 }
 
@@ -262,7 +296,7 @@ Call::Call(ASTNode callable, ASTNode args)
     : callable(std::move(callable))
     , arguments(std::move(args))
 {
-    if (!is<Identifier>(this->callable) && !is<StampedIdentifier>(this->callable) && !is<ExpressionList>(this->callable)) {
+    if (!is<Identifier>(this->callable) && !is<StampedIdentifier>(this->callable) && !is<IdentifierList>(this->callable)) {
         NYI("Callable must be a function name, not a {}", SyntaxNodeType_name(this->callable->type()));
     }
     assert(this->arguments != nullptr);

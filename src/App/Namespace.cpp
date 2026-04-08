@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "Util/Logging.h"
 #include "Util/Utf8.h"
 #include <ranges>
 
@@ -91,6 +92,7 @@ ASTNode Namespace::find_module(std::wstring const &name) const
 void Namespace::register_module(std::wstring const &name, ASTNode module)
 {
     assert(!contains(name));
+    module->bound_type = TypeRegistry::module;
     entries.emplace(name, Namespace::NSEntry { std::in_place_index<Namespace::Module>, module });
 }
 
@@ -153,13 +155,19 @@ bool Namespace::has_variable(std::wstring const &name) const
 
 pType Namespace::type_of(std::wstring const &name) const
 {
-    auto n = find_variable(name);
-    if (n != nullptr) {
-        return n->bound_type;
-    }
-    auto t = find_type(name);
-    if (t != nullptr) {
-        return TypeRegistry::the().type_of(t);
+    if (auto entry { at(name) }; entry) {
+        switch (entry->index()) {
+        case Namespace::Variable:
+            return std::get<Namespace::Variable>(*entry)->bound_type;
+        case Namespace::Function:
+            return nullptr;
+        case Namespace::Module:
+            return TypeRegistry::module;
+        case Namespace::Type:
+            return TypeRegistry::the().type_of(std::get<pType>(*entry));
+        default:
+            UNREACHABLE();
+        }
     }
     return nullptr;
 }
@@ -235,5 +243,4 @@ void Namespace::register_function(std::wstring name, ASTNode fnc)
     assert(!contains(name) || has_function(name));
     entries.emplace(name, Namespace::NSEntry { std::in_place_index<Namespace::Function>, fnc });
 }
-
 }

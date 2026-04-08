@@ -639,8 +639,10 @@ struct ILFile {
     std::vector<std::wstring> strings;
     std::vector<std::string>  cstrings;
     std::vector<ILFunction>   functions;
+    ILBindings                variables {};
     bool                      has_exports { false };
     bool                      has_main { false };
+    ILBinding const          &add(std::wstring_view name, pType const &type);
     friend std::wostream     &operator<<(std::wostream &os, ILFunction const &function);
 };
 

@@ -142,7 +142,10 @@ ILFunction &QBEContext::add_function(std::wstring name, pType return_type)
 
 ILBinding const &QBEContext::add(std::wstring_view name, pType const &type)
 {
-    return function().add(name, type);
+    if (program.files[current_file].functions.size() > current_function) {
+        return function().add(name, type);
+    }
+    return program.files[current_file].add(name, type);
 }
 
 ILParameter const &QBEContext::add_parameter(std::wstring_view name, pType const &type)

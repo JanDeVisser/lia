@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <format>
 #include <map>
+#include <sstream>
 #include <string>
 #include <variant>
 #include <vector>
@@ -29,7 +30,7 @@ namespace Lia {
 #define TypeKinds(S)       \
     S(VoidType)            \
     S(PointerType)         \
-    S(NamespaceType)       \
+    S(ModuleType)          \
     S(FunctionType)        \
     S(TypeList)            \
     S(GenericParameter)    \
@@ -184,10 +185,10 @@ struct PointerType {
     }
 };
 
-struct NamespaceType {
+struct ModuleType {
     std::wstring to_string() const
     {
-        return L"Namespace";
+        return L"Module";
     }
 
     intptr_t size_of() const
@@ -525,6 +526,7 @@ struct TypeRegistry {
     static pType character;
     static pType void_;
     static pType pointer;
+    static pType module;
 
 private:
     TypeRegistry();
@@ -635,7 +637,7 @@ struct formatter<pType, wchar_t> {
     template<class FmtContext>
     FmtContext::iterator format(pType const &type, FmtContext &ctx) const
     {
-        std::wostringstream out;
+        std::wstringstream out;
         if (type != nullptr) {
             out << type;
         } else {

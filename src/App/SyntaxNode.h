@@ -29,6 +29,7 @@ using namespace Util;
 #define SyntaxNodeTypes(S) \
     S(Dummy)               \
     S(Alias)               \
+    S(ArgumentList)        \
     S(BinaryExpression)    \
     S(Block)               \
     S(BoolConstant)        \
@@ -50,6 +51,7 @@ using namespace Util;
     S(FunctionDeclaration) \
     S(FunctionDefinition)  \
     S(Identifier)          \
+    S(IdentifierList)      \
     S(IfStatement)         \
     S(Include)             \
     S(Import)              \
@@ -214,6 +216,12 @@ struct Alias {
     Alias(std::wstring name, ASTNode aliased_type);
 };
 
+struct ArgumentList {
+    ASTNodes arguments;
+
+    explicit ArgumentList(ASTNodes arguments);
+};
+
 struct BinaryExpression {
     ASTNode  lhs;
     Operator op;
@@ -365,6 +373,39 @@ struct Identifier {
     std::wstring identifier;
 
     explicit Identifier(std::wstring_view identifier);
+};
+
+struct IdentifierList {
+    Strings identifiers;
+
+    IdentifierList(auto const &id)
+    {
+        emplace(id);
+    }
+
+    IdentifierList(auto const &id1, auto const &id2)
+    {
+        emplace(id1);
+        emplace(id2);
+    }
+
+private:
+    void emplace(std::wstring const &id)
+    {
+        identifiers.emplace_back(id);
+    }
+
+    void emplace(Strings const &ids)
+    {
+        for (std::wstring const &id : ids) {
+            emplace(id);
+        };
+    }
+
+    void emplace(IdentifierList const &ids)
+    {
+        emplace(ids.identifiers);
+    }
 };
 
 struct IfStatement {
@@ -669,22 +710,11 @@ concept Constant = std::is_same_v<N, Number>
     || std::is_same_v<N, QuotedString>
     || std::is_same_v<N, Void>;
 
-template<typename N>
-bool is_constant()
-{
-    return false;
-}
-
-template<Constant N>
-bool is_constant()
-{
-    return true;
-}
-
 bool is_constant(ASTNode const &n);
 
 using SyntaxNode = std::variant<Dummy,
     Alias,
+    ArgumentList,
     BinaryExpression,
     Block,
     BoolConstant,
@@ -706,6 +736,7 @@ using SyntaxNode = std::variant<Dummy,
     FunctionDeclaration,
     FunctionDefinition,
     Identifier,
+    IdentifierList,
     IfStatement,
     Include,
     Import,

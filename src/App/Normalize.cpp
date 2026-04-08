@@ -35,6 +35,12 @@ ASTNode normalize(ASTNode n, Alias const &impl)
 }
 
 template<>
+ASTNode normalize(ASTNode n, ArgumentList const &impl)
+{
+    return make_node<ArgumentList>(n, normalize(impl.arguments));
+}
+
+template<>
 ASTNode normalize(ASTNode n, BinaryExpression const &impl)
 {
     auto make_expression_list = [n]() -> ASTNode {
@@ -58,9 +64,9 @@ ASTNode normalize(ASTNode n, BinaryExpression const &impl)
     };
 
     auto make_name_list = [](ASTNode const &n) -> std::expected<ASTNode, LiaError> {
-        ASTNodes                                                 nodes;
+        Strings                                                  identifiers;
         std::function<std::expected<ASTNode, LiaError>(ASTNode)> flatten;
-        flatten = [&nodes, &flatten](ASTNode n) -> std::expected<ASTNode, LiaError> {
+        flatten = [&identifiers, &flatten](ASTNode n) -> std::expected<ASTNode, LiaError> {
             if (is<BinaryExpression>(n)) {
                 auto const &binexp { get<BinaryExpression>(n) };
                 if (binexp.op != Operator::MemberAccess) {
@@ -73,32 +79,33 @@ ASTNode normalize(ASTNode n, BinaryExpression const &impl)
                     return std::unexpected(res.error());
                 }
             } else if (is<Identifier>(n)) {
-                nodes.push_back(normalize(n));
+                identifiers.emplace_back(get<Identifier>(n).identifier);
             } else {
                 return std::unexpected(LiaError { n->location, L"Expected dotted identifier list" });
             }
             return n;
         };
         if (is<Identifier>(n)) {
-            return normalize(n);
+            return make_node<IdentifierList>(n, get<Identifier>(n).identifier);
         }
         if (auto res = flatten(n); !res) {
             return std::unexpected(res.error());
         }
-        return make_node<ExpressionList>(n, nodes);
+        return make_node<IdentifierList>(n, identifiers);
     };
 
     switch (impl.op) {
     case Operator::Call: {
         auto arg_list = normalize(impl.rhs);
         if (is<Void>(arg_list)) {
-            arg_list = make_node<ExpressionList>(arg_list, ASTNodes {});
-        }
-        if (!is<ExpressionList>(arg_list)) {
+            arg_list = make_node<ArgumentList>(arg_list, ASTNodes {});
+        } else if (!is<ExpressionList>(arg_list)) {
             auto &parser { *(arg_list.repo) };
-            arg_list = parser.make_node<ExpressionList>(ASTNodes { arg_list });
+            arg_list = parser.make_node<ArgumentList>(ASTNodes { arg_list });
+        } else {
+            arg_list = make_node<ArgumentList>(arg_list, get<ExpressionList>(arg_list).expressions);
         }
-        assert(is<ExpressionList>(arg_list));
+        assert(is<ArgumentList>(arg_list));
         arg_list = normalize(arg_list);
         if (auto res = make_name_list(impl.lhs); !res) {
             n.bind_error(res.error());

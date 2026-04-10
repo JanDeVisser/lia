@@ -653,7 +653,7 @@ struct ILProgram {
 };
 
 struct QBEValue {
-    ILBaseType                     type { ILBaseType::L };
+    ILBaseType                     type { ILBaseType::V };
     std::variant<intptr_t, double> payload;
 
     QBEValue() = default;

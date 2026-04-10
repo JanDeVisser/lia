@@ -10,6 +10,7 @@
 
 #include <App/Parser.h>
 #include <App/QBE/QBE.h>
+#include <variant>
 
 namespace Lia::QBE {
 
@@ -175,10 +176,10 @@ int is_float(ILBaseType type)
 }
 
 ILType::ILAggregate::ILAggregate(pType const &type)
-    : name(std::move(type_ref(type)))
+    : name(type_ref(type))
     , size_of(type->size_of())
     , align_of(type->align_of())
-    , layout(std::move(flatten_type(type)))
+    , layout(flatten_type(type))
 {
 }
 
@@ -348,16 +349,16 @@ ILType qbe_type(pType const &type)
                     UNREACHABLE();
                 }
             },
-            [](ReferenceType const &reference) -> ILType {
+            [](ReferenceType const &) -> ILType {
                 return ILBaseType::L;
             },
             [](ZeroTerminatedArray const &) -> ILType {
                 return ILBaseType::L;
             },
-            [&type](EnumType const &enum_type) -> ILType {
+            [](EnumType const &enum_type) -> ILType {
                 return qbe_type(enum_type.underlying_type);
             },
-            [&type](auto const &descr) -> ILType {
+            [&type](auto const &) -> ILType {
                 return ILType { type };
             } },
         type->description);
@@ -572,7 +573,7 @@ std::wostream &operator<<(std::wostream &os, ILValue const &value)
                                 break;
                             }
                         },
-                        [](auto const &t) {
+                        [](auto const &) {
                             UNREACHABLE();
                         } },
                     value.type.inner);
@@ -723,7 +724,7 @@ std::wostream &operator<<(std::wostream &os, ExtDef const &impl)
     return os;
 }
 
-std::wostream &operator<<(std::wostream &os, HltDef const &impl)
+std::wostream &operator<<(std::wostream &os, HltDef const &)
 {
     os << "    hlt";
     return os;
@@ -816,7 +817,11 @@ std::wostream &operator<<(std::wostream &os, ILFunction const &function)
     if (function.exported) {
         os << "export ";
     }
-    os << "function " << qbe_type(function.return_type) << " $" << function.name << '(';
+    os << "function";
+    if (function.return_type != TypeRegistry::void_) {
+        os << ' ' << qbe_type(function.return_type);
+    }
+    os << " $" << function.name << '(';
     auto first = true;
     for (auto const &[ix, param] : std::ranges::views::enumerate(function.parameters)) {
         if (!first) {
@@ -853,6 +858,13 @@ std::wostream &operator<<(std::wostream &os, ILFunction const &function)
     for (auto const &instruction : function.instructions) {
         os << instruction;
     }
+    if (!std::holds_alternative<RetDef>(function.instructions.back().impl)) {
+        if (function.return_type != TypeRegistry::void_) {
+            os << ILInstruction { RetDef { ILValue::integer(0, ILBaseType::L) } };
+        } else {
+            os << ILInstruction { RetDef { } };
+        }
+    }
     os << R"(}
 
 )";
@@ -878,7 +890,7 @@ std::wstring type_ref(pType const &type)
                 [](TaggedUnionType const &) -> wchar_t const * {
                     return L"union";
                 },
-                [&type](auto const &) -> wchar_t const * {
+                [](auto const &) -> wchar_t const * {
                     return nullptr;
                 } },
             type->description);
@@ -896,7 +908,7 @@ void emit_type(pType const &type, std::wostream &os)
 {
     std::visit(
         overloads {
-            [&os, &type](SliceType const &opt) {
+            [&os](SliceType const &) {
                 os << "type :slice_t = { l, l }\n";
             },
             [&os, &type](OptionalType const &opt) {
@@ -945,7 +957,7 @@ void emit_type(pType const &type, std::wostream &os)
                    << type_ref(tagged_union.underlying())
                    << " }\n";
             },
-            [&os, &type](auto const &) {
+            [](auto const &) {
             } },
         type->description);
 }

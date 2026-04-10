@@ -42,7 +42,7 @@ QBEValue Frame::make_from_buffer(ILValue target, QBEValue val)
             [this, &buffer](ILBaseType const &bt) -> QBEValue {
                 switch (bt) {
                 case ILBaseType::V:
-                    return QBEValue {};
+                    return QBEValue { };
                 case ILBaseType::B:
                 case ILBaseType::SB:
                     return QBEValue { *((int8_t *) buffer) };
@@ -65,9 +65,9 @@ QBEValue Frame::make_from_buffer(ILValue target, QBEValue val)
                 case ILBaseType::D:
                     return QBEValue { *((double *) buffer) };
                 }
-                return QBEValue {};
+                return QBEValue { };
             },
-            [this, &val, &target](ILType::ILAggregate const &) -> QBEValue {
+            [&val](ILType::ILAggregate const &) -> QBEValue {
                 return val;
             } },
         target.type.inner);
@@ -164,7 +164,7 @@ void assign(pFrame const &frame, ILValue const &val_ref, QBEValue const &v)
                 frame->variables.resize(variable.index + 1);
                 frame->variables[variable.index] = v;
             },
-            [frame, &v](ILValue::ReturnValue const &ret_val) {
+            [frame, &v](ILValue::ReturnValue const &) {
                 frame->return_value = v;
             },
             [frame, &v](ILValue::Parameter const &parameter) {
@@ -201,7 +201,7 @@ QBEValue get(pFrame const &frame, ILValue const &val_ref)
                     return v;
                 }
                 fatal(L"No variable with index `{}` in frame {}", variable.index, frame->variables.size());
-                return {};
+                return { };
             },
             [&frame](ILValue::Parameter const &param) -> QBEValue {
                 if (param.index < frame->arguments.size()) {
@@ -209,7 +209,7 @@ QBEValue get(pFrame const &frame, ILValue const &val_ref)
                     return v;
                 }
                 fatal(L"No parameter with index `{}` in frame", param.index);
-                return {};
+                return { };
             },
             [&frame](ILValue::Global const &global) -> QBEValue {
                 auto const &globals = frame->vm.globals[frame->file.id];
@@ -218,7 +218,7 @@ QBEValue get(pFrame const &frame, ILValue const &val_ref)
                     return globals.at(global.name);
                 }
                 fatal(L"No global with name `{}`", global.name);
-                return {};
+                return { };
             },
             [&frame](ILValue::ReturnValue const &) -> QBEValue {
                 trace(L"get(ReturnValue) {}", frame->return_value);
@@ -474,7 +474,7 @@ ExecResult native_call(ILFunction const &il, pFrame const &frame, CallDef const 
         ++frame->ip;
         return instruction.target;
     }
-    return std::unexpected(ExecError {});
+    return std::unexpected(ExecError { });
 }
 
 template<>
@@ -501,7 +501,7 @@ ExecResult execute(ILFunction const &il, pFrame const &frame, CallDef const &ins
                 return instruction.target;
             }
         }
-        return std::unexpected(ExecError {});
+        return std::unexpected(ExecError { });
     };
 
     if (auto res = find_and_execute(frame->file); res) {
@@ -533,14 +533,14 @@ template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, DbgFile const &instruction)
 {
     ++frame->ip;
-    return {};
+    return { };
 }
 
 template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, DbgLoc const &instruction)
 {
     ++frame->ip;
-    return {};
+    return { };
 }
 
 template<>
@@ -612,7 +612,7 @@ template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, JmpDef const &instruction)
 {
     frame->ip = il.labels[instruction.label];
-    return {};
+    return { };
 }
 
 template<>
@@ -622,14 +622,14 @@ ExecResult execute(ILFunction const &il, pFrame const &frame, JnzDef const &inst
     frame->ip = (static_cast<bool>(expr))
         ? il.labels[instruction.on_true]
         : il.labels[instruction.on_false];
-    return {};
+    return { };
 }
 
 template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, LabelDef const &instruction)
 {
     ++frame->ip;
-    return {};
+    return { };
 }
 
 template<>
@@ -649,7 +649,7 @@ ExecResult execute(ILFunction const &il, pFrame const &frame, RetDef const &inst
         auto retval { instruction.expr.value() };
         return std::unexpected(get(frame, retval));
     }
-    return std::unexpected(QBEValue {});
+    return std::unexpected(QBEValue { });
 }
 
 template<>
@@ -790,6 +790,7 @@ ExecutionResult execute_qbe(VM &vm, ILFile const &file, ILFunction const &functi
     frame->ip = 0;
     while (true) {
         trace(L"function `{}`[{}] ip {}", function.name, function.instructions.size(), frame->ip);
+
         if (auto res = execute(function, frame, function.instructions[frame->ip]); !res.has_value()) {
             return std::visit(
                 overloads {
@@ -806,8 +807,33 @@ ExecutionResult execute_qbe(VM &vm, ILFile const &file, ILFunction const &functi
                 res.error());
         } else {
             if (frame->ip >= function.instructions.size()) {
+                if (!std::holds_alternative<RetDef>(function.instructions.back().impl)) {
+                    ILInstruction ret;
+                    if (function.return_type != TypeRegistry::void_) {
+                        ret = ILInstruction { RetDef { ILValue::integer(0, ILBaseType::L) } };
+                    } else {
+                        ret = ILInstruction { RetDef { } };
+                    }
+                    if (auto ret_res = execute(function, frame, ret); !ret_res.has_value()) {
+                        return std::visit(
+                            overloads {
+                                [&vm, &base_pointer, &function](QBEValue const &ret_value) -> ExecutionResult {
+                                    trace(L"function `{}` returns `{:tx}`", function.name, ret_value);
+                                    vm.release(base_pointer);
+                                    vm.dump_stack();
+                                    return ret_value;
+                                },
+                                [&vm, &base_pointer](ExecError const &error) -> ExecutionResult {
+                                    vm.release(base_pointer);
+                                    return std::unexpected(error.message);
+                                } },
+                            ret_res.error());
+                    } else {
+                        res = ret_res;
+                    }
+                }
                 vm.release(base_pointer);
-                trace(L"function `{}` returns `{:tx}`", function.name, res.value());
+                trace(L"function `{}` returns `{:t}`", function.name, res.value());
                 return get(frame, res.value());
             }
         }
@@ -820,7 +846,7 @@ ExecutionResult execute_qbe(VM &vm)
         if (file.has_main) {
             for (auto const &function : file.functions) {
                 if (function.name == L"main") {
-                    return execute_qbe(vm, file, function, {});
+                    return execute_qbe(vm, file, function, { });
                 }
             }
         }

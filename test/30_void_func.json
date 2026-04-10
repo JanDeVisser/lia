@@ -1,0 +1,11 @@
+{
+  "name": "30_void_func",
+  "comptime_stdout": [],
+  "comptime_stderr": [],
+  "stdout": [
+    "16"
+  ],
+  "stderr": [],
+  "exit": 0,
+  "args": []
+}

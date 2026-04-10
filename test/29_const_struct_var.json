@@ -1,0 +1,11 @@
+{
+  "name": "29_const_struct_var",
+  "comptime_stdout": [],
+  "comptime_stderr": [],
+  "stdout": [
+    "69 420"
+  ],
+  "stderr": [],
+  "exit": 0,
+  "args": []
+}

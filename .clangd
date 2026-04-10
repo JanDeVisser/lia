@@ -1,2 +1,10 @@
 CompileFlags:
-  Add: --std=c++23
+  Add: [--std=c++23, -Wall, -Wextra]
+  QueryDriver: [/usr/bin/g++-15, /usr/bin/gcc-15]
+
+Index:
+  Background: Build
+  StandardLibrary: No
+
+Hover:
+  ShowAKA: Yes

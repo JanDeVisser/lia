@@ -70,14 +70,10 @@ struct ILType {
 
     ILType() = default;
     ILType(ILType const &) = default;
+    ILType(pType const &type);
 
     ILType(ILBaseType const &bt)
         : inner(bt)
-    {
-    }
-
-    ILType(pType const &type)
-        : inner(ILAggregate { type })
     {
     }
 };
@@ -162,13 +158,15 @@ inline ILBaseType il_type_for<int64_t>()
 }
 
 template<>
-inline ILBaseType il_type_for<long>()
+inline ILBaseType il_type_for<uint64_t>()
 {
     return ILBaseType::L;
 }
 
+#if 0
+
 template<>
-inline ILBaseType il_type_for<uint64_t>()
+inline ILBaseType il_type_for<long>()
 {
     return ILBaseType::L;
 }
@@ -178,6 +176,8 @@ inline ILBaseType il_type_for<unsigned long>()
 {
     return ILBaseType::L;
 }
+
+#endif
 
 template<>
 inline ILBaseType il_type_for<void *>()
@@ -246,6 +246,8 @@ enum class ILOperation {
 };
 
 struct ILValue {
+    using ILValues = std::vector<ILValue>;
+
     struct Local {
         int var;
     };
@@ -279,7 +281,7 @@ struct ILValue {
         int64_t,
         double,
         std::wstring,
-        std::vector<ILValue>>;
+        ILValues>;
 
     ILValue()
         : type()
@@ -372,22 +374,20 @@ struct ILValue {
         return ret;
     }
 
-    using ILValues = std::vector<ILValue>;
-
-    static ILValue sequence(ILValues values, int align, int size)
+    static ILValue sequence(ILValues values, pType const &type)
     {
-        return { ILType { ILBaseType::V }, std::move(values) };
+        return { ILType { type }, std::move(values) };
     }
 
     template<typename TypeDesc>
     static ILValue return_value(TypeDesc td)
     {
-        return { ILType { std::move(td) }, ReturnValue {} };
+        return { ILType { std::move(td) }, ReturnValue { } };
     }
 
     static ILValue null()
     {
-        return { ILType {}, 0 };
+        return { ILType { }, 0 };
     }
 
     ILType       type { ILBaseType::V };
@@ -618,11 +618,11 @@ struct ILFunction {
     bool                       exported { false };
     intptr_t                   ret_allocation { 0 };
     size_t                     id;
-    ILParameters               parameters {};
-    ILBindings                 variables {};
-    std::vector<ILTemporary>   temps {};
-    std::vector<ILInstruction> instructions {};
-    std::vector<size_t>        labels {};
+    ILParameters               parameters { };
+    ILBindings                 variables { };
+    std::vector<ILTemporary>   temps { };
+    std::vector<ILInstruction> instructions { };
+    std::vector<size_t>        labels { };
 
     ILFunction(ILFile &file, std::wstring name, pType return_type, bool exported);
     ILBinding const      &add(std::wstring_view name, pType const &type);
@@ -639,7 +639,7 @@ struct ILFile {
     std::vector<std::wstring> strings;
     std::vector<std::string>  cstrings;
     std::vector<ILFunction>   functions;
-    ILBindings                variables {};
+    ILBindings                variables { };
     bool                      has_exports { false };
     bool                      has_main { false };
     ILBinding const          &add(std::wstring_view name, pType const &type);
@@ -649,7 +649,7 @@ struct ILFile {
 struct ILProgram {
     std::wstring        name;
     std::vector<ILFile> files;
-    Strings             libraries {};
+    Strings             libraries { };
 };
 
 struct QBEValue {
@@ -769,7 +769,7 @@ struct QBEContext {
     int       next_literal;
     fs::path  file_name;
     bool      is_export { false };
-    ILProgram program {};
+    ILProgram program { };
     size_t    current_file;
     size_t    current_function;
 
@@ -791,11 +791,11 @@ struct Frame {
     struct VM        &vm;
     ILFile const     &file;
     ILFunction const &function;
-    ILVariables       variables {};
-    ILVariables       arguments {};
+    ILVariables       variables { };
+    ILVariables       arguments { };
     QBEValue          return_value;
-    ILVariables       locals {};
-    ILVariables       temporaries {};
+    ILVariables       locals { };
+    ILVariables       temporaries { };
     size_t            ip { 0 };
 
     QBEValue allocate(size_t bytes, size_t alignment);
@@ -811,7 +811,7 @@ struct VM {
     constexpr static size_t         STACK_SIZE = 64 * 1024;
     ILProgram const                &program;
     std::vector<Frame>              frames;
-    std::vector<ILNamedVariables>   globals {};
+    std::vector<ILNamedVariables>   globals { };
     std::array<uint8_t, STACK_SIZE> stack;
     std::array<uint8_t, STACK_SIZE> data;
     size_t                          stack_pointer { 0 };
@@ -895,7 +895,7 @@ struct QBEOperand {
     }
 
 private:
-    std::optional<ILValue> value {};
+    std::optional<ILValue> value { };
 };
 
 struct QBEBinExpr {
@@ -904,6 +904,8 @@ struct QBEBinExpr {
     Operator   op;
     QBEOperand rhs;
 };
+
+using GenBinExpr = std::expected<QBEBinExpr, std::wstring>;
 
 struct QBEUnaryExpr {
     ASTNode    node;
@@ -935,10 +937,56 @@ struct QBEUnaryExpr {
             (__op);                                         \
         })
 
+#define TRY_GENERATE(n, ctx)                                \
+    (                                                       \
+        {                                                   \
+            ASTNode    __n = (n);                           \
+            QBEOperand __op { n, __n->bound_type };         \
+            if (auto __res = __op.get_value(ctx); !__res) { \
+                return std::unexpected(__res.error());      \
+            }                                               \
+            (__op);                                         \
+        })
+
+#define TRY_ENSURE_GENERATED(op, ctx)                       \
+    (                                                       \
+        {                                                   \
+            QBEOperand __op { op };                         \
+            if (auto __res = __op.get_value(ctx); !__res) { \
+                return std::unexpected(__res.error());      \
+            }                                               \
+            (__op);                                         \
+        })
+
+#define TRY_GENERATE_NODES(n, ctx)                                     \
+    (                                                                  \
+        {                                                              \
+            Alloc __var { };                                           \
+            if (auto __res = generate_qbe_nodes((n), (ctx)); !__res) { \
+                return __res;                                          \
+            } else {                                                   \
+                __var = __res.value();                                 \
+            }                                                          \
+            (__var);                                                   \
+        })
+
+#define TRY_GETVALUE(op, ctx)                             \
+    (                                                     \
+        {                                                 \
+            QBEOperand __op;                              \
+            if (auto __res = op.get_value(ctx); !__res) { \
+                return __res;                             \
+            } else {                                      \
+                __op = __res.value();                     \
+            }                                             \
+            (__op);                                       \
+        })
+
 using GenResult = QBEOperand::GenResult;
 
 GenResult                              qbe_operator(QBEBinExpr const &expr, QBEContext &ctx);
 GenResult                              qbe_operator(QBEUnaryExpr const &expr, QBEContext &ctx);
+GenResult                              generate_qbe_node(ASTNode const &n, QBEContext &ctx);
 std::expected<ILProgram, std::wstring> generate_qbe(ASTNode const &node);
 std::expected<void, std::wstring>      compile_qbe(ILProgram const &program);
 ExecutionResult                        execute_qbe(VM &vm, ILFile const &file, ILFunction const &function, std::vector<QBEValue> const &args);
@@ -949,7 +997,7 @@ std::wostream                         &operator<<(std::wostream &os, ILFile cons
 std::wostream                         &operator<<(std::wostream &os, QBEValue const &value);
 
 template<typename T>
-T as(VM const &vm, QBEValue const &val)
+T as(VM const &, QBEValue const &)
 {
     std::unreachable();
 }

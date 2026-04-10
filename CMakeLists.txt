@@ -113,6 +113,7 @@ add_library(
     src/App/QBE/Native.cpp
     src/App/QBE/Operator.cpp
     src/App/QBE/QBE.cpp
+    src/App/QBE/QBEInternal.cpp
 )
 
 target_link_libraries(

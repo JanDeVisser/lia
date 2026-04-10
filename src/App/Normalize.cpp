@@ -98,7 +98,7 @@ ASTNode normalize(ASTNode n, BinaryExpression const &impl)
     case Operator::Call: {
         auto arg_list = normalize(impl.rhs);
         if (is<Void>(arg_list)) {
-            arg_list = make_node<ArgumentList>(arg_list, ASTNodes {});
+            arg_list = make_node<ArgumentList>(arg_list, ASTNodes { });
         } else if (!is<ExpressionList>(arg_list)) {
             auto &parser { *(arg_list.repo) };
             arg_list = parser.make_node<ArgumentList>(ASTNodes { arg_list });
@@ -109,7 +109,7 @@ ASTNode normalize(ASTNode n, BinaryExpression const &impl)
         arg_list = normalize(arg_list);
         if (auto res = make_name_list(impl.lhs); !res) {
             n.bind_error(res.error());
-            return {};
+            return { };
         } else {
             auto call = make_node<Call>(n, res.value(), arg_list);
             return normalize(call);
@@ -169,12 +169,12 @@ ASTNode normalize(ASTNode n, Comptime const &impl)
 
     auto synthetic_return_type = parser.make_node<TypeSpecification>(
         n->location,
-        TypeNameNode { { L"string" }, ASTNodes {} });
+        TypeNameNode { { L"string" }, ASTNodes { } });
     auto synthetic_decl = parser.make_node<FunctionDeclaration>(
         n->location,
         std::format(L"comptime-{}", *(n.id)),
-        ASTNodes {},
-        ASTNodes {},
+        ASTNodes { },
+        ASTNodes { },
         synthetic_return_type);
     auto synthetic_def = parser.make_node<FunctionDefinition>(
         std::format(L"comptime-{}", *(n.id)),
@@ -250,11 +250,11 @@ ASTNode normalize(ASTNode n, Extern const &impl)
     ASTNodes normalized;
     for (auto const &decl : impl.declarations) {
         if (is<FunctionDeclaration>(decl)) {
-            auto const &name { get<FunctionDeclaration>(decl).name };
+            auto const name { get<FunctionDeclaration>(decl).name };
             normalized.emplace_back(
                 normalize(parser.make_node<FunctionDefinition>(
                     decl->location,
-                    name,
+                    std::move(name),
                     decl,
                     parser.make_node<ExternLink>(decl->location, std::format(L"{}:{}", impl.library, name)))));
         } else {
@@ -307,7 +307,7 @@ ASTNode normalize(ASTNode n, Import const &impl)
 {
     assert(!impl.file_name.empty());
     auto     fname { join(impl.file_name, L"/"sv) };
-    fs::path path {};
+    fs::path path { };
     for (auto const &elem : impl.file_name) {
         path += elem;
     }
@@ -603,7 +603,7 @@ ASTNode normalize(ASTNode node)
 
 ASTNodes normalize(ASTNodes nodes)
 {
-    ASTNodes normalized {};
+    ASTNodes normalized { };
     std::ranges::for_each(
         nodes,
         [&normalized](auto const &n) {

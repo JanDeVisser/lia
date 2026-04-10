@@ -26,5 +26,6 @@
   "25_tagged_union_literal",
   "26_tagged_union_must",
   "27_tagged_union_or",
-  "28_import_main"
+  "28_import_main",
+  "29_const_struct_var"
 ]

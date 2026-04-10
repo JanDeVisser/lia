@@ -5,9 +5,7 @@ export func main() i32 {
     raylib.SetTargetFPS(60::i32);
     while (!raylib.WindowShouldClose()) {
         raylib.BeginDrawing()
-	const c: raylib.Color = { 255::u8, 0::u8, 0::u8, 255::u8 }
-        raylib.ClearBackground(c)
-        //raylib.ClearBackground(raylib.RED)
+        raylib.ClearBackground(raylib.RED)
         raylib.EndDrawing()
     }
     raylib.CloseWindow()

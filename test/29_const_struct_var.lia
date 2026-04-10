@@ -1,0 +1,19 @@
+struct X {
+    x: i64,
+    y: i64,
+}
+
+const XX: X = { 69, 420 }
+
+func foo(x: X) i32 {
+    putint(x.x)
+    puts(" ")
+    putint(x.y)
+    putln("")
+    return 0::i32
+}
+
+export func main() i32 {
+    return foo(XX)
+}
+

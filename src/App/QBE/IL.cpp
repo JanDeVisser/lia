@@ -13,6 +13,16 @@
 
 namespace Lia::QBE {
 
+ILType::ILType(pType const &type)
+    : inner(ILAggregate { type })
+{
+    if (qbe_first_class_type(type)) {
+        inner = qbe_type_code(type);
+    } else {
+        inner = ILAggregate { type };
+    }
+}
+
 bool operator==(ILType const &type, ILBaseType other)
 {
     return std::holds_alternative<ILBaseType>(type.inner) && std::get<ILBaseType>(type.inner) == other;
@@ -49,6 +59,9 @@ bool qbe_first_class_type(pType const &type)
             },
             [](EnumType const &e) -> bool {
                 return qbe_first_class_type(e.underlying_type);
+            },
+            [](PointerType const &) -> bool {
+                return true;
             },
             [](ZeroTerminatedArray const &) -> bool {
                 return true;
@@ -105,10 +118,7 @@ ILBaseType qbe_type_code(StructType const &)
 
 ILBaseType qbe_type_code(auto const &type)
 {
-    int                   status;
-    std::type_info const &ti = typeid(type);
-    auto                 *realname = abi::__cxa_demangle(ti.name(), NULL, NULL, &status);
-    warning("Assuming qbe_type_code(`{}') is `l`", realname);
+    warning(L"Assuming qbe_type_code(`{}') is `l`", demangle<decltype(type)>());
     return ILBaseType::L;
 }
 
@@ -286,7 +296,7 @@ void flatten_type(auto const &descr, std::vector<ILBaseType> &)
 
 void flatten_type(pType const &type, std::vector<ILBaseType> &components)
 {
-    std::vector<ILBaseType> ret {};
+    std::vector<ILBaseType> ret { };
     std::visit(
         [&components](auto const &descr) {
             return flatten_type(descr, components);
@@ -306,10 +316,10 @@ ILType qbe_type(pType const &type)
     return std::visit(
         overloads {
             [](std::monostate const &) -> ILType {
-                return {};
+                return { };
             },
             [](VoidType const &) -> ILType {
-                return {};
+                return { };
             },
             [](BoolType const &) -> ILType {
                 return ILBaseType::W;
@@ -1017,7 +1027,7 @@ ILBinding const &ILFunction::add(std::wstring_view name, pType const &type)
 
 ILParameter const &ILFunction::add_parameter(std::wstring_view name, pType const &type)
 {
-    std::optional<int> var_index {};
+    std::optional<int> var_index { };
     if (!is<ReferenceType>(type)) {
         var_index = variables.size();
     }

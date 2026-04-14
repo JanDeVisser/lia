@@ -29,5 +29,6 @@
   "28_import_main",
   "29_const_struct_var",
   "30_void_func",
-  "31_global_struct_var"
+  "31_global_struct_var",
+  "32_break"
 ]

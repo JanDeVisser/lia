@@ -106,7 +106,20 @@ void QBEContext::add_operation(ILInstructionImpl impl)
     }
     if (std::holds_alternative<LabelDef>(impl)) {
         auto const &label_def = std::get<LabelDef>(impl);
-        function.labels[label_def.label] = function.instructions.size();
+        auto        n { label_def.label.node->id.value() };
+        if (function.labels.size() <= n) {
+            function.labels.resize(n + 1);
+        }
+        function.labels[n][static_cast<int>(label_def.label.type)] = function.instructions.size();
+        // auto const &l { function.labels[n] };
+        // trace(L"Added label {}. Labels:", label_def.label);
+        // for (auto const &[ix, l] : function.labels | std::ranges::views::enumerate) {
+        //     if (std::ranges::all_of(l, [](size_t ip) { return ip == 0; })) {
+        //         continue;
+        //     }
+        //     trace(L"{}: {} {} {} {}", ix, l[0], l[1], l[2], l[3]);
+        // }
+        // trace(L"Added label {} -> {}: {} {} {} {}", label_def.label, n, l[0], l[1], l[2], l[3]);
     }
     if (trace_on()) {
         std::wstringstream s;

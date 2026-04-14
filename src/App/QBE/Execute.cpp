@@ -581,28 +581,29 @@ ExecResult execute(ILFunction const &, pFrame const &frame, ExtDef const &instru
     return instruction.target;
 }
 
+size_t ip_for_label(ILFunction const &il, QBELabel const &label)
+{
+    auto n { label.node->id.value() };
+    assert(il.labels.size() > n);
+    auto ret = il.labels[n][static_cast<int>(label.type)];
+    trace(L"label {} -> ip {}", label, ret);
+    return ret;
+}
+
 template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, JmpDef const &instruction)
 {
-    for (auto const &[l, ip] : il.labels) {
-        std::wcerr << l << ' ' << ip << '\n';
-    }
-    std::wcerr << "label : " << instruction.label << '\n';
-    frame->ip = il.labels.at(instruction.label);
+    frame->ip = ip_for_label(il, instruction.label);
     return { };
 }
 
 template<>
 ExecResult execute(ILFunction const &il, pFrame const &frame, JnzDef const &instruction)
 {
-    // for (auto const &[l, ip] : il.labels) {
-    //     std::wcerr << l << ' ' << ip << '\n';
-    // }
-    // std::wcerr << "on_true : " << instruction.on_true << " on_false : " << instruction.on_false << '\n';
     auto expr = get(frame, instruction.expr);
     frame->ip = (static_cast<bool>(expr))
-        ? il.labels.at(instruction.on_true)
-        : il.labels.at(instruction.on_false);
+        ? ip_for_label(il, instruction.on_true)
+        : ip_for_label(il, instruction.on_false);
     return { };
 }
 
@@ -780,6 +781,13 @@ ExecutionResult execute_qbe(VM &vm, ILFile const &file, ILFunction const &functi
     QBEValue base_pointer { vm.stack.data() + vm.stack_pointer };
     trace("Frame status after setup:");
     frame->dump_frame();
+    trace("Labels");
+    for (auto const &[ix, l] : function.labels | std::ranges::views::enumerate) {
+        if (std::ranges::all_of(l, [](size_t ip) { return ip == 0; })) {
+            continue;
+        }
+        trace(L"{}: {} {} {} {}", ix, l[0], l[1], l[2], l[3]);
+    }
     trace("==============================================");
     frame->ip = 0;
     while (true) {

@@ -1445,7 +1445,7 @@ ASTNode Parser::parse_for()
         append(token, "Error parsing `for` block");
         return { };
     }
-    return make_node<ForStatement>(location + stmt->location, std::wstring { text_of(var_name) }, range, stmt);
+    return make_node<ForStatement>(location + stmt->location, std::wstring { text_of(var_name) }, range, stmt, label);
 }
 
 ASTNode Parser::parse_func()
@@ -1492,6 +1492,14 @@ ASTNode Parser::parse_func()
 
 ASTNode Parser::parse_if()
 {
+    Label         label;
+    TokenLocation location { lexer.last_location };
+    if (lexer.has_lookback(1)
+        && lexer.lookback(0).matches_symbol(':')
+        && lexer.lookback(1).matches(TokenKind::Identifier)) {
+        label = text_of(lexer.lookback(1));
+        location = lexer.lookback(1).location;
+    }
     auto if_token = lexer.lex();
     assert(if_token.matches_keyword(LiaKeyword::If));
     auto condition = parse_expression();
@@ -1514,8 +1522,8 @@ ASTNode Parser::parse_if()
         }
     }
     return make_node<IfStatement>(
-        if_token.location + (else_branch != nullptr ? else_branch->location : if_branch->location),
-        condition, if_branch, else_branch);
+        location + (else_branch != nullptr ? else_branch->location : if_branch->location),
+        condition, if_branch, else_branch, label);
 }
 
 ASTNode Parser::parse_import()

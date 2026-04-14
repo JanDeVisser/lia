@@ -411,6 +411,7 @@ enum class LabelType {
     Top,
     Else,
     End,
+    Count,
 };
 
 struct QBELabel {
@@ -425,10 +426,10 @@ struct QBELabel {
 
     bool operator<(QBELabel const &other) const
     {
-        if (node == other.node) {
-            return static_cast<int>(type) < static_cast<int>(other.type);
+        if (node != other.node) {
+            return node < other.node;
         }
-        return node < other.node;
+        return static_cast<int>(type) < static_cast<int>(other.type);
     }
 
     bool operator==(QBELabel const &) const = default;
@@ -668,6 +669,8 @@ struct ILTemporary {
     ILType il_type;
 };
 
+using ILLabel = std::array<size_t, static_cast<int>(LabelType::Count)>;
+
 using ILBindings = std::vector<ILBinding>;
 using ILParameters = std::vector<ILParameter>;
 
@@ -682,7 +685,7 @@ struct ILFunction {
     ILBindings                 variables { };
     std::vector<ILTemporary>   temps { };
     std::vector<ILInstruction> instructions { };
-    std::map<QBELabel, size_t> labels { };
+    std::vector<ILLabel>       labels { };
 
     ILFunction(ILFile &file, std::wstring name, pType return_type, bool exported);
     ILBinding const      &add(std::wstring_view name, pType type);
@@ -1174,6 +1177,29 @@ struct std::formatter<Lia::QBE::ILValue, wchar_t> {
                 value.inner);
         }
         out << value;
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<Lia::QBE::QBELabel, wchar_t> {
+
+    template<class ParseContext>
+    constexpr ParseContext::iterator parse(ParseContext &ctx)
+    {
+        auto it = ctx.begin();
+        if (it == ctx.end() || *it == '}') {
+            return it;
+        }
+        ++it;
+        return it;
+    }
+
+    template<class FmtContext>
+    FmtContext::iterator format(Lia::QBE::QBELabel const &label, FmtContext &ctx) const
+    {
+        std::wostringstream out;
+        out << label;
         return std::ranges::copy(std::move(out).str(), ctx.out()).out;
     }
 };

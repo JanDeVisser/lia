@@ -1262,7 +1262,7 @@ struct std::formatter<Lia::QBE::QBEValue, wchar_t> {
         if (with_type) {
             std::visit(
                 [&out](auto const &payload) {
-                    out << demangle<decltype(payload)> << ' ';
+                    out << demangle<decltype(payload)>() << ' ';
                 },
                 value.payload);
         }

@@ -377,7 +377,7 @@ ASTNode normalize(ASTNode n, Import const &impl)
             module = parse<Module>(parser, std::move(contents), path.string());
             get<ModuleProxy>(proxy).module = module;
         } else {
-            n.error(L"Could not open import `{}`", impl.file_name);
+            n.error(L"Could not open import `{}`", join(impl.file_name, L"."sv));
         }
     }
     if (module) {

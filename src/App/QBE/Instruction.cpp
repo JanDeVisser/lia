@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "Util/Logging.h"
 #include <sstream>
 
 #include <App/Parser.h>
@@ -44,6 +45,8 @@ std::wostream &operator<<(std::wostream &os, LabelType t)
     case LabelType::End:
         os << L"end";
         break;
+    default:
+        UNREACHABLE();
     }
     return os;
 }

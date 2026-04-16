@@ -48,7 +48,7 @@ template<typename R>
 static BindResults bind_nodes(R const &nodes)
 {
     pTypes                   types;
-    std::optional<ASTStatus> ret {};
+    std::optional<ASTStatus> ret { };
 
     for (auto &n : nodes) {
         auto res = bind(n);
@@ -126,7 +126,7 @@ static ASTNode instantiate(ASTNode n, std::map<std::wstring, pType> const &gener
         def.declaration = make_node<FunctionDeclaration>(
             def.declaration,
             decl.name,
-            ASTNodes {},
+            ASTNodes { },
             stamp(decl.parameters),
             stamp(decl.return_type));
         def.implementation = stamp(this_def.implementation);
@@ -157,7 +157,7 @@ static ASTNode instantiate(ASTNode n, std::vector<pType> const &generic_args)
 }
 
 template<class N>
-BindResult bind(ASTNode n, N &impl)
+BindResult bind(ASTNode, N &)
 {
     return nullptr;
 }
@@ -177,7 +177,7 @@ BindResult bind(ASTNode n, Alias &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, ArgumentList &impl)
+BindResult bind(ASTNode, ArgumentList &impl)
 {
     return TypeRegistry::the().typelist_of(try_bind_nodes(impl.arguments));
 }
@@ -199,7 +199,7 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
             auto const &label = get<Identifier>(impl.rhs).identifier;
             if (auto res = std::visit(
                     overloads {
-                        [&label, &impl, &n, &parser, &type_type](TaggedUnionType const &t) -> std::expected<ASTNode, LiaError> {
+                        [&label, &impl, &n, &type_type](TaggedUnionType const &t) -> std::expected<ASTNode, LiaError> {
                             if (auto v = t.value_for(label); v) {
                                 auto ret = make_node<TagValue>(n, static_cast<int64_t>(*v), label, t.payload_for(label), nullptr);
                                 ret->bound_type = type_type;
@@ -212,7 +212,7 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
                                     std::format(L"Unknown tagged union value `{}`", label),
                                 });
                         },
-                        [&label, &impl, &n, &parser, &type_type](EnumType const &t) -> std::expected<ASTNode, LiaError> {
+                        [&label, &impl, &n, &type_type](EnumType const &t) -> std::expected<ASTNode, LiaError> {
                             if (auto v = t.value_for(label); v) {
                                 auto ret = make_node<TagValue>(n, static_cast<int64_t>(*v), label, nullptr, nullptr);
                                 ret->bound_type = type_type;
@@ -247,7 +247,7 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
         auto lhs_value_type = lhs_type->value_type();
         return std::visit(
             overloads {
-                [&parser, &impl, &n](ModuleType const &) -> BindResult {
+                [&impl, &n](ModuleType const &) -> BindResult {
                     auto       proxy { get<ModuleProxy>(impl.lhs) };
                     auto const label { get<Identifier>(impl.rhs).identifier };
                     auto       t { proxy.module->ns->type_of(label) };
@@ -263,7 +263,7 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
                     return t;
                 },
                 [&parser, &impl](StructType const &strukt) -> BindResult {
-                    auto find_member = [&strukt, &parser, &impl](std::wstring_view const name) -> std::expected<StructType::Field, std::wstring> {
+                    auto find_member = [&strukt](std::wstring_view const name) -> std::expected<StructType::Field, std::wstring> {
                         for (auto const &field : strukt.fields) {
                             if (field.name == name) {
                                 return field;
@@ -448,7 +448,7 @@ BindResult bind(ASTNode n, BinaryExpression &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, Block &impl)
+BindResult bind(ASTNode, Block &impl)
 {
     auto types = try_bind_nodes(impl.statements);
     if (!types.empty()) {
@@ -458,7 +458,7 @@ BindResult bind(ASTNode n, Block &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, Break &impl)
+BindResult bind(ASTNode, Break &)
 {
     return TypeRegistry::void_;
 }
@@ -483,7 +483,7 @@ BindResult bind(ASTNode n, Call &impl)
     auto                     &args { get<ArgumentList>(impl.arguments).arguments };
     std::wstring              name;
     std::vector<std::wstring> names;
-    ASTNodes                  type_args {};
+    ASTNodes                  type_args { };
     if (auto const *id = get_if<Identifier>(impl.callable); id != nullptr) {
         name = id->identifier;
         names = { name };
@@ -635,6 +635,7 @@ BindResult bind(ASTNode n, Call &impl)
         auto const &func_type_descr { get<FunctionType>(func.declaration->bound_type) };
         auto const &param_types { get<TypeList>(func_type_descr.parameters).types };
         for (auto const &[arg, param_type] : std::ranges::views::zip(args, param_types)) {
+            // WTF
         }
         return func_type_descr.result;
     }
@@ -690,7 +691,7 @@ BindResult bind(ASTNode n, Comptime &impl)
                 trace("---------------------------------------------------");
             }
             QBE::VM vm { program };
-            if (auto exec_res = execute_qbe(vm, file, function, {}); !res.has_value()) {
+            if (auto exec_res = execute_qbe(vm, file, function, { }); !res.has_value()) {
                 return parser.bind_error(n->location, res.error());
             } else {
                 auto const output_val = exec_res.value();
@@ -723,19 +724,25 @@ BindResult bind(ASTNode n, Comptime &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, BoolConstant &impl)
+BindResult bind(ASTNode, BoolConstant &)
 {
     return TypeRegistry::boolean;
 }
 
 template<>
-BindResult bind(ASTNode n, Decimal &impl)
+BindResult bind(ASTNode, Decimal &)
 {
     return TypeRegistry::f64;
 }
 
 template<>
-BindResult bind(ASTNode n, Number &impl)
+BindResult bind(ASTNode, DefaultSwitchValue &)
+{
+    return TypeRegistry::void_;
+}
+
+template<>
+BindResult bind(ASTNode, Number &impl)
 {
     return std::visit(
         [](auto v) -> pType {
@@ -745,32 +752,32 @@ BindResult bind(ASTNode n, Number &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, String &impl)
+BindResult bind(ASTNode, String &)
 {
     return TypeRegistry::string;
 }
 
 template<>
-BindResult bind(ASTNode n, CString &impl)
+BindResult bind(ASTNode, CString &)
 {
     return TypeRegistry::cstring;
 }
 
 template<>
-BindResult bind(ASTNode n, Continue &impl)
+BindResult bind(ASTNode, Continue &)
 {
     return TypeRegistry::void_;
 }
 
 template<>
-BindResult bind(ASTNode n, DeferStatement &impl)
+BindResult bind(ASTNode, DeferStatement &impl)
 {
     try_bind(impl.statement);
     return TypeRegistry::void_;
 }
 
 template<>
-BindResult bind(ASTNode n, Dummy &impl)
+BindResult bind(ASTNode, Dummy &)
 {
     return TypeRegistry::void_;
 }
@@ -858,19 +865,19 @@ BindResult bind(ASTNode n, Enum &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, EnumValue &impl)
+BindResult bind(ASTNode, EnumValue &)
 {
     return TypeRegistry::void_;
 }
 
 template<>
-BindResult bind(ASTNode n, ExpressionList &impl)
+BindResult bind(ASTNode, ExpressionList &impl)
 {
     return TypeRegistry::the().typelist_of(try_bind_nodes(impl.expressions));
 }
 
 template<>
-BindResult bind(ASTNode n, Extern &impl)
+BindResult bind(ASTNode, Extern &impl)
 {
     for (auto const &func : impl.declarations) {
         try_bind(func);
@@ -879,7 +886,7 @@ BindResult bind(ASTNode n, Extern &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, ExternLink &impl)
+BindResult bind(ASTNode, ExternLink &)
 {
     return TypeRegistry::void_;
 }
@@ -895,7 +902,7 @@ BindResult bind(ASTNode n, ForStatement &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, FunctionDeclaration &impl)
+BindResult bind(ASTNode, FunctionDeclaration &impl)
 {
     return TypeRegistry::the().function_of(
         try_bind_nodes(impl.parameters),
@@ -980,20 +987,20 @@ BindResult bind(ASTNode n, IfStatement &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, LoopStatement &impl)
+BindResult bind(ASTNode, LoopStatement &impl)
 {
     return bind(impl.statement);
 }
 
 template<>
-BindResult bind(ASTNode n, Module &impl)
+BindResult bind(ASTNode, Module &impl)
 {
     try_bind_nodes(impl.statements);
     return TypeRegistry::void_;
 }
 
 template<>
-BindResult bind(ASTNode n, ModuleProxy &impl)
+BindResult bind(ASTNode, ModuleProxy &)
 {
     return TypeRegistry::void_;
 }
@@ -1005,7 +1012,7 @@ BindResult bind(ASTNode, Nullptr &)
 }
 
 template<>
-BindResult bind(ASTNode n, Parameter &impl)
+BindResult bind(ASTNode, Parameter &impl)
 {
     return get<TypeType>(try_bind(impl.type_name)).type;
 }
@@ -1027,7 +1034,7 @@ BindResult bind(ASTNode n, Program &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, PublicDeclaration &impl)
+BindResult bind(ASTNode, PublicDeclaration &impl)
 {
     return bind(impl.declaration);
 }
@@ -1075,13 +1082,99 @@ BindResult bind(ASTNode n, Struct &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, StructMember &impl)
+BindResult bind(ASTNode, StructMember &impl)
 {
     return get<TypeType>(try_bind(impl.member_type)).type;
 }
 
 template<>
-BindResult bind(ASTNode n, TypeSpecification &impl)
+BindResult bind(ASTNode, SwitchCase &impl)
+{
+    try_bind(impl.case_value);
+    try_bind(impl.statement);
+    return impl.statement->bound_type;
+}
+
+template<>
+BindResult bind(ASTNode n, SwitchStatement &impl)
+{
+    try_bind(impl.switch_value);
+    try_bind_nodes(impl.switch_cases);
+
+    auto   switch_type { impl.switch_value->bound_type };
+    size_t cases { 0 };
+    auto   has_default { false };
+    auto   default_in_list { false };
+    for (auto const &c : impl.switch_cases) {
+        auto const &switch_case { get<SwitchCase>(c) };
+        auto const &case_value { switch_case.case_value };
+        auto        matches { std::visit(
+            overloads {
+                [&switch_type, &has_default, &default_in_list, &cases](ExpressionList const &impl) -> bool {
+                    cases += impl.expressions.size();
+                    return std::ranges::all_of(
+                        impl.expressions,
+                        [&switch_type, &has_default, &default_in_list](auto const &e) -> bool {
+                            if (is<DefaultSwitchValue>(e)) {
+                                default_in_list = true;
+                                has_default = true;
+                                e->bound_type = switch_type;
+                                e->status = ASTStatus::Bound;
+                            }
+                            return e->bound_type == switch_type;
+                        });
+                },
+                [&switch_type, &c, &has_default, &cases](DefaultSwitchValue const &) -> bool {
+                    c->bound_type = switch_type;
+                    c->status = ASTStatus::Bound;
+                    has_default = true;
+                    cases += 1;
+                    return true;
+                },
+                [&switch_type, &case_value, &cases](auto const &) -> bool {
+                    cases += 1;
+                    return case_value->bound_type == switch_type;
+                } },
+            switch_case.case_value->node) };
+        if (!matches) {
+            return c.bind_error(
+                L"Switch case value type `{}` different from switch value `{}`",
+                case_value->bound_type->name, switch_type->name);
+        }
+        if (default_in_list) {
+            return c.bind_error(
+                L"Default switch case value `_` in a list makes no sense");
+        }
+    }
+    if (has_default)
+        --cases;
+    if (auto cardi { cardinality(switch_type) }; cardi) {
+        if (cases < cardi.value() && !has_default) {
+            return n.bind_error(
+                L"Not all switch values of type `{}` are handled",
+                switch_type->name);
+        }
+        if (cases > cardi.value() || (has_default && cardi.value() == cases)) {
+            return n.bind_error(
+                L"There is a duplicate handler for a value of switch value type `{}`",
+                switch_type->name);
+        }
+    } else {
+        if (!has_default) {
+            return n.bind_error(
+                L"Switch statement with switch type `{}` should handle the default `_` case",
+                switch_type->name);
+        }
+    }
+
+    if (impl.switch_cases.empty()) {
+        return TypeRegistry::void_;
+    }
+    return impl.switch_cases[0]->bound_type;
+}
+
+template<>
+BindResult bind(ASTNode n, TypeSpecification &)
 {
     auto ret = resolve(n);
     if (ret == nullptr) {
@@ -1112,10 +1205,10 @@ BindResult bind(ASTNode n, UnaryExpression &impl)
         if (impl.op == oper && operand.matches(impl.operand, operand_type)) {
             return std::visit(
                 overloads {
-                    [](TypeKind const &result_type) -> pType {
+                    [](TypeKind const &) -> pType {
                         UNREACHABLE();
                     },
-                    [&operand_type, &operand, &impl](PseudoType const &pseudo_type) -> pType {
+                    [&operand_type, &impl](PseudoType const &pseudo_type) -> pType {
                         switch (pseudo_type) {
                         case PseudoType::Self:
                             return operand_type;
@@ -1136,7 +1229,7 @@ BindResult bind(ASTNode n, UnaryExpression &impl)
                                     [](ResultType const &result) -> pType {
                                         return TypeRegistry::the().referencing(result.success);
                                     },
-                                    [&impl](TaggedUnionType const &result) -> pType {
+                                    [&impl](TaggedUnionType const &) -> pType {
                                         assert(impl.operand->type() == SyntaxNodeType::TagValue);
                                         return TypeRegistry::the().referencing(get<TagValue>(impl.operand).payload_type);
                                     },
@@ -1214,7 +1307,7 @@ BindResult bind(ASTNode n, WhileStatement &impl)
 }
 
 template<>
-BindResult bind(ASTNode n, Yield &impl)
+BindResult bind(ASTNode, Yield &impl)
 {
     return bind(impl.statement);
 }

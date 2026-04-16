@@ -36,11 +36,11 @@ static ASTNode parse_extern(Parser &parser);
 static ASTNode parse_func_decl(Parser &parser, Parser::Token const &func);
 static ASTNode parse_c_type(Parser &parser);
 static ASTNode parse_c_func_decl(Parser &parser);
+static ASTNode parse_switch(Parser &parser);
 
 std::vector<Parser::OperatorDef> Parser::operators {
     { Operator::Add, '+', 11 },
     { Operator::AddressOf, '&', 14, Position::Prefix, Associativity::Right },
-    { Operator::Apply, LiaKeyword::Apply, 2 },
     { Operator::Assign, '=', 2, Position::Infix, Associativity::Right },
     { Operator::AssignAnd, LiaKeyword::AssignAnd, 1, Position::Infix, Associativity::Right },
     { Operator::AssignDecrement, LiaKeyword::AssignDecrement, 1, Position::Infix, Associativity::Right },
@@ -269,12 +269,14 @@ ASTNode Parser::parse_statement()
             return parse_return();
         case LiaKeyword::Struct:
             return parse_struct();
+        case LiaKeyword::Switch:
+            return parse_switch(*this);
         case LiaKeyword::While:
             return parse_while();
         case LiaKeyword::Yield:
             return parse_yield();
         default:
-            append(t, "Unexpected keyword `{}` parsing statement", as_utf8(text_of(t)));
+            append(t, L"Unexpected keyword `{}` parsing statement", text_of(t));
             lexer.lex();
             return { };
         }
@@ -295,7 +297,7 @@ ASTNode Parser::parse_statement()
             auto     old_level = level;
             level = ParseLevel::Block;
             if (auto const end_token = parse_statements(block); !end_token.matches_symbol('}')) {
-                append(t, "Unexpected end of block");
+                append(t, "Unexpected end of statement block");
                 level = old_level;
                 return { };
             } else {
@@ -343,7 +345,7 @@ ASTNode Parser::parse_statement()
     }
     default:
         lexer.lex();
-        append(t, L"Unexpected token `{}`", text_of(t));
+        append(t, L"Unexpected token `{}`. Expected a statement", text_of(t));
         return { };
     }
 }
@@ -420,7 +422,6 @@ ASTNode parse_number(Parser &parser, Parser::Token number)
             number.location + parser.lexer.last_location,
             parser.text_of(number), frac, exponent);
     }
-    auto num { parser.text_of(number) };
     return parser.make_node<Number>(number.location, parser.text_of(number), number.radix());
 }
 
@@ -491,13 +492,13 @@ ASTNode Parser::parse_primary()
             auto  op_token = lexer.lex();
             auto  operand = (op.op == Operator::Sizeof) ? parse_type() : parse_expression(bp.right);
             if (!operand) {
-                append(token, "Expected operand following prefix operator '{}'", Operator_name(op.op));
+                append(token, "Expected operand following prefix operator `{}`", Operator_name(op.op));
                 return { };
             }
             ret = make_node<UnaryExpression>(op_token.location + operand->location, op.op, operand);
             break;
         }
-        append(token, "Unexpected keyword '{}' parsing primary expression", LiaKeyword_name(token.keyword()));
+        append(token, "Unexpected keyword `{}` parsing primary expression", LiaKeyword_name(token.keyword()));
         return { };
     case TokenKind::Symbol: {
         if (token.symbol_code() == '(') {
@@ -526,7 +527,7 @@ ASTNode Parser::parse_primary()
             auto  op_token = lexer.lex();
             auto  operand = parse_expression(bp.right);
             if (!operand) {
-                append(token, "Expected operand following prefix operator '{}'", Operator_name(op.op));
+                append(token, "Expected operand following prefix operator `{}`", Operator_name(op.op));
                 return { };
             }
             ret = make_node<UnaryExpression>(op_token.location + operand->location, op.op, operand);
@@ -568,7 +569,7 @@ ASTNode Parser::parse_expression(Precedence min_prec)
                     return { };
                 }
                 if (auto err = lexer.expect_symbol(']'); !err.has_value()) {
-                    append(err.error(), "Expected ']'");
+                    append(err.error(), "Expected `]`");
                     return { };
                 }
                 lhs = make_node<BinaryExpression>(lhs->location + rhs->location, lhs, op_maybe->op, rhs);
@@ -596,7 +597,7 @@ ASTNode Parser::parse_expression(Precedence min_prec)
                 // trace("parse_expression() param_list = {}", SyntaxNodeType_name(param_list->type));
                 lhs = make_node<BinaryExpression>(lhs->location + param_list->location, lhs, Operator::Call, param_list);
             } else {
-                auto token = lexer.lex();
+                lexer.lex();
                 auto rhs = (op.op == Operator::Cast) ? parse_type() : parse_expression(bp.right);
                 if (rhs == nullptr) {
                     return { };
@@ -1365,14 +1366,14 @@ ASTNode parse_extern(Parser &parser)
         lexer.lex();
         library = parser.text_of(token);
         if (library.length() <= 2) {
-            parser.append(token, "Invalid extern library name");
+            parser.append(token, L"Invalid extern library name `{}`", library);
             return { };
         }
         library = library.substr(0, library.size() - 1).substr(1);
     }
 
     if (!lexer.expect_symbol('{')) {
-        parser.append(lexer.last_location, "Expected '{");
+        parser.append(lexer.last_location, "Expected `{` to open `extern` declaration block");
     }
     ASTNodes functions;
     while (true) {
@@ -1606,11 +1607,11 @@ ASTNode parse_export_public(Parser &parser)
             [](FunctionDefinition const &n) -> std::optional<std::wstring> {
                 return n.name;
             },
-            [&parser, &decl](ExportDeclaration const &n) -> std::optional<std::wstring> {
+            [&parser, &decl](ExportDeclaration const &) -> std::optional<std::wstring> {
                 parser.append(decl->location, L"Double public/export declaration");
                 return { };
             },
-            [&parser, &decl](PublicDeclaration const &n) -> std::optional<std::wstring> {
+            [&parser, &decl](PublicDeclaration const &) -> std::optional<std::wstring> {
                 parser.append(decl->location, L"Double public/export declaration");
                 return { };
             },
@@ -1735,6 +1736,51 @@ ASTNode Parser::parse_var_decl()
         initializer,
         is_const);
     return ret;
+}
+
+ASTNode parse_switch(Parser &parser)
+{
+    auto &lexer { parser.lexer };
+    Label label;
+    auto  location { lexer.peek().location };
+    if (lexer.has_lookback(1)
+        && lexer.lookback(0).matches_symbol(':')
+        && lexer.lookback(1).matches(TokenKind::Identifier)) {
+        label = parser.text_of(lexer.lookback(1));
+        location = lexer.lookback(1).location;
+    }
+    lexer.lex();
+    auto switch_value = parser.parse_expression();
+    if (switch_value == nullptr) {
+        return nullptr;
+    }
+    if (!lexer.expect_symbol('{')) {
+        parser.append(lexer.last_location, "Expected `{` opening `switch` statement");
+        return nullptr;
+    }
+    ASTNodes cases;
+    if (!lexer.accept_symbol('}')) {
+        do {
+            auto value { parser.parse_expression() };
+            if (value == nullptr) {
+                return nullptr;
+            }
+            if (auto res { lexer.expect_keyword(LiaKeyword::SwitchCase) }; !res) {
+                parser.append(res.error().location, "Expected `=>` in switch case");
+                return nullptr;
+            }
+            auto statement { parser.parse_statement() };
+            if (statement == nullptr) {
+                return nullptr;
+            }
+            if (auto res { lexer.expect_symbol(';') }; !res) {
+                parser.append(lexer.last_location, "Expected `;` terminating switch case");
+                return nullptr;
+            }
+            cases.emplace_back(parser.make_node<SwitchCase>(value->location + lexer.last_location, value, statement));
+        } while (!lexer.accept_symbol('}'));
+    }
+    return parser.make_node<SwitchStatement>(location + lexer.last_location, label, switch_value, cases);
 }
 
 ASTNode Parser::parse_while()

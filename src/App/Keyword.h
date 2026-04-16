@@ -18,7 +18,6 @@ using namespace Util;
 using Precedence = uint16_t;
 
 #define LiaKeywords(S)         \
-    S(Apply, "=>")             \
     S(AssignAnd, "&=")         \
     S(AssignDecrement, "-=")   \
     S(AssignDivide, "/=")      \
@@ -64,6 +63,8 @@ using Precedence = uint16_t;
     S(ShiftRight, ">>")        \
     S(Sizeof, "#::")           \
     S(Struct, "struct")        \
+    S(Switch, "switch")        \
+    S(SwitchCase, "=>")        \
     S(True, "true")            \
     S(While, "while")          \
     S(Yield, "yield")
@@ -106,7 +107,7 @@ template<>
     }
     LiaKeywords(S)
 #undef S
-        return {};
+        return { };
 }
 
 }

@@ -33,5 +33,6 @@
   "32_break",
   "33_loop",
   "34_break_while",
-  "35_break_if"
+  "35_break_if",
+  "36_switch_int"
 ]

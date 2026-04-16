@@ -646,6 +646,61 @@ GenResult generate_qbe_node(ASTNode const &n, Struct const &, QBEContext &)
 }
 
 template<>
+GenResult generate_qbe_node(ASTNode const &n, SwitchStatement const &impl, QBEContext &ctx)
+{
+    auto switch_var = TRY_GENERATE(impl.switch_value, ctx);
+    switch_var = TRY_DEREFERENCE(switch_var, ctx);
+    ctx += LabelDef { LabelType::Top, n };
+    ASTNode default_case { nullptr };
+    for (auto const &c : impl.switch_cases) {
+        auto switch_case { get<SwitchCase>(c) };
+        ctx += LabelDef { LabelType::Begin, c };
+        if (auto res = std::visit(
+                overloads {
+                    [&switch_var, &c, &ctx](ExpressionList const &list) -> GenResult {
+                        for (auto const &e : list.expressions) {
+                            ctx += LabelDef { LabelType::Begin, e };
+                            auto case_var { TRY_GENERATE(e, ctx) };
+                            case_var = TRY_DEREFERENCE(case_var, ctx);
+                            auto match { ILValue::local(++ctx.next_var, ILBaseType::W) };
+                            ctx += ExprDef { switch_var.get_value(), case_var.get_value(), ILOperation::Equals, match },
+                                JnzDef { match, QBELabel { LabelType::Top, c }, QBELabel { LabelType::End, e } },
+                                LabelDef { LabelType::End, e };
+                        }
+                        ctx += JmpDef { LabelType::End, c };
+                        return { };
+                    },
+                    [&default_case, &switch_case](DefaultSwitchValue const &) -> GenResult {
+                        default_case = switch_case.statement;
+                        return { };
+                    },
+                    [&c, &switch_var, &switch_case, &ctx](auto const &) -> GenResult {
+                        auto case_var { TRY_GENERATE(switch_case.case_value, ctx) };
+                        auto match { ILValue::local(++ctx.next_var, ILBaseType::W) };
+                        ctx += ExprDef { switch_var.get_value(), case_var.get_value(), ILOperation::Equals, match },
+                            JnzDef { match, QBELabel { LabelType::Top, c }, QBELabel { LabelType::End, c } };
+                        return { };
+                    } },
+                switch_case.case_value->node);
+            !res) {
+            return std::unexpected(res.error());
+        }
+        ctx += LabelDef { LabelType::Top, c };
+        TRY_GENERATE(switch_case.statement, ctx);
+        ctx += JmpDef { LabelType::End, n },
+            LabelDef { LabelType::End, c };
+    }
+
+    if (default_case != nullptr) {
+        ctx += LabelDef { LabelType::Begin, default_case };
+        TRY_GENERATE(default_case, ctx);
+        ctx += LabelDef { LabelType::End, default_case };
+    }
+    ctx += LabelDef { LabelType::End, n };
+    return QBEOperand { n, ILValue::null() };
+}
+
+template<>
 GenResult generate_qbe_node(ASTNode const &n, TagValue const &impl, QBEContext &ctx)
 {
     if (impl.operand != nullptr) {

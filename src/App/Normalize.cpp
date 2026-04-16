@@ -534,6 +534,41 @@ ASTNode normalize(ASTNode n, Struct const &impl)
 }
 
 template<>
+ASTNode normalize(ASTNode n, SwitchCase const &impl)
+{
+    auto case_value = std::visit(
+        overloads {
+            [&impl](ExpressionList const &list) -> ASTNode {
+                ASTNodes values;
+                for (auto const &e : list.expressions) {
+                    if (auto const *id { get_if<Identifier>(e) }; id != nullptr) {
+                        values.emplace_back(normalize(make_node<DefaultSwitchValue>(e)));
+                    } else {
+                        values.emplace_back(normalize(e));
+                    }
+                }
+                return make_node<ExpressionList>(impl.case_value, values);
+            },
+            [&impl](Identifier const &id) -> ASTNode {
+                if (id.identifier == L"_"sv) {
+                    return normalize(make_node<DefaultSwitchValue>(impl.case_value));
+                }
+                return normalize(impl.case_value);
+            },
+            [&impl](auto const &) -> ASTNode {
+                return normalize(impl.case_value);
+            } },
+        impl.case_value->node);
+    return make_node<SwitchCase>(n, case_value, normalize(impl.statement));
+}
+
+template<>
+ASTNode normalize(ASTNode n, SwitchStatement const &impl)
+{
+    return make_node<SwitchStatement>(n, impl.label, normalize(impl.switch_value), normalize(impl.switch_cases));
+}
+
+template<>
 ASTNode normalize(ASTNode n, TypeSpecification const &impl)
 {
     auto description = std::visit(

@@ -1,0 +1,14 @@
+export func main() i32 {
+    for x in 0..10 {
+        switch x {
+            1 => putln("one");
+            3, 5, 7, 9 => putln("odd");
+            2, 4, 6, 8 => {
+                puts("even")
+                endln()
+            };
+            _ => putln("zero");
+        }
+    }
+    return 0::i32
+}

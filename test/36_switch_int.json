@@ -1,0 +1,20 @@
+{
+  "name": "36_switch_int",
+  "comptime_stdout": [],
+  "comptime_stderr": [],
+  "stdout": [
+    "zero",
+    "one",
+    "even",
+    "odd",
+    "even",
+    "odd",
+    "even",
+    "odd",
+    "even",
+    "odd"
+  ],
+  "stderr": [],
+  "exit": 0,
+  "args": []
+}

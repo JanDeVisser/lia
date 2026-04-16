@@ -421,6 +421,19 @@ Struct::Struct(std::wstring name, ASTNodes members)
 {
 }
 
+SwitchCase::SwitchCase(ASTNode case_value, ASTNode statement)
+    : case_value(std::move(case_value))
+    , statement(std::move(statement))
+{
+}
+
+SwitchStatement::SwitchStatement(Label label, ASTNode switch_value, ASTNodes switch_cases)
+    : label(std::move(label))
+    , switch_value(std::move(switch_value))
+    , switch_cases(std::move(switch_cases))
+{
+}
+
 TagValue::TagValue(int64_t tag_value, std::wstring label, pType payload_type, ASTNode payload)
     : tag_value(tag_value)
     , label(std::move(label))

@@ -464,7 +464,7 @@ struct Type {
     pType                         id { nullptr };
     std::wstring                  name;
     TypeDescription               description;
-    std::map<std::wstring, pType> arguments {};
+    std::map<std::wstring, pType> arguments { };
 
     template<typename DescrType>
     Type(std::wstring n, DescrType descr)
@@ -553,6 +553,10 @@ bool is(pType const &type)
     assert(type);
     return std::holds_alternative<N>(type->description);
 }
+
+using Cardinality = std::optional<size_t>;
+
+Cardinality cardinality(pType const &type);
 
 template<typename DescrType>
 pType make_type(std::wstring n, DescrType descr)

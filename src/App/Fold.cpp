@@ -20,7 +20,7 @@ template<typename Func>
 static FoldResult evaluate_op(Number const &lhs, Number const &rhs, Func const &func)
 {
     if (lhs.value.index() != rhs.value.index()) {
-        return {};
+        return { };
     }
     return std::visit(
         [&func](auto lhs_value, auto rhs_value) -> Number {
@@ -33,7 +33,7 @@ template<typename Func>
 static FoldResult evaluate_relational_op(Number const &lhs, Number const &rhs, Func const &func)
 {
     if (lhs.value.index() != rhs.value.index()) {
-        return {};
+        return { };
     }
     return std::visit(
         [&func](auto lhs_value, auto rhs_value) -> BoolConstant {
@@ -47,7 +47,7 @@ static FoldResult evaluate_relational_op(Number const &lhs, Number const &rhs, F
     template<typename Lhs, typename Rhs>                                                      \
     FoldResult evaluate_##O(ASTNode const &, Lhs const &lhs, ASTNode const &, Rhs const &rhs) \
     {                                                                                         \
-        return {};                                                                            \
+        return { };                                                                           \
     }
 BinOps(S)
 #undef S
@@ -223,7 +223,7 @@ FoldResult evaluate_Sizeof(ASTNode const &n, TypeSpecification const &spec, ASTN
     if (auto const type_maybe = resolve(n); type_maybe != nullptr) {
         return Number { static_cast<uint64_t>(type_maybe->size_of()) };
     }
-    return {};
+    return { };
 }
 
 FoldResult evaluate_Cast(ASTNode const &, Number const &number, ASTNode &type_node, TypeSpecification const &)
@@ -257,11 +257,11 @@ FoldResult evaluate_Cast(ASTNode const &, Number const &number, ASTNode &type_no
                     fatal(L"Cannot cast integer `{}` to enum `{}`", get<int64_t>(number), type->name);
                 },
                 [&type](auto const &) -> FoldResult {
-                    return {};
+                    return { };
                 } },
             type->description);
     }
-    return {};
+    return { };
 }
 
 FoldResult evaluate_Cast(ASTNode const &tag_node, TagValue const &tag, ASTNode &type_node, TypeSpecification const &)
@@ -283,7 +283,7 @@ FoldResult evaluate_Cast(ASTNode const &tag_node, TagValue const &tag, ASTNode &
             return Number { get<IntType>(type), tag.tag_value };
         }
     }
-    return {};
+    return { };
 }
 
 template<class Lhs, class Rhs>
@@ -298,7 +298,7 @@ FoldResult fold(ASTNode lhs, Lhs const &lhs_impl, Operator oper, ASTNode rhs, Rh
 #undef S
             default : break;
     }
-    return {};
+    return { };
 }
 
 FoldResult fold(ASTNode lhs, Operator oper, ASTNode rhs)
@@ -320,12 +320,12 @@ FoldResult fold(Operator oper, ASTNode n, N const &operand)
 #undef S
 #define S(O)          \
     case Operator::O: \
-        return evaluate_##O(n, operand, ASTNode { nullptr }, Void {});
+        return evaluate_##O(n, operand, ASTNode { nullptr }, Void { });
         BinOps(S)
 #undef S
             default : UNREACHABLE();
     }
-    return {};
+    return { };
 }
 
 FoldResult fold(Operator oper, ASTNode node)
@@ -343,7 +343,7 @@ FoldResult fold(Operator oper, ASTNode node)
 template<class N>
 FoldResult fold(ASTNode n, N const &impl)
 {
-    return {};
+    return { };
 }
 
 template<>
@@ -352,7 +352,7 @@ FoldResult fold(ASTNode n, BinaryExpression const &impl)
     if (auto folded { fold(impl.lhs, impl.op, impl.rhs) }; folded) {
         return folded;
     }
-    return {};
+    return { };
 }
 
 template<>
@@ -361,7 +361,7 @@ FoldResult fold(ASTNode n, UnaryExpression const &impl)
     if (auto folded { fold(impl.op, impl.operand) }; folded) {
         return folded;
     }
-    return {};
+    return { };
 }
 
 ASTNode fold(ASTNode node)

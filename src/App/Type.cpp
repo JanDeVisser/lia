@@ -5,6 +5,7 @@
  */
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <functional>
@@ -55,7 +56,7 @@ pType TypeRegistry::void_;
 pType TypeRegistry::pointer;
 pType TypeRegistry::module;
 
-TypeRegistry TypeRegistry::s_registry {};
+TypeRegistry TypeRegistry::s_registry { };
 
 std::wstring type_name(pType const &type)
 {
@@ -265,7 +266,7 @@ std::optional<int64_t> EnumType::value_for(std::wstring_view label) const
     if (res != values.end()) {
         return res->value;
     }
-    return {};
+    return { };
 }
 
 pType EnumType::underlying() const
@@ -284,7 +285,7 @@ std::wstring TaggedUnionType::encode() const
     std::for_each(
         tags.begin(),
         tags.end(),
-        [&ret, this](Tag const &tag) -> void {
+        [&ret](Tag const &tag) -> void {
             if (tag.payload) {
                 ret += tag.payload->encode();
             } else {
@@ -386,7 +387,7 @@ std::wstring StructType::encode() const
     auto ret { std::format(L"{:1x}", fields.size()) };
     std::ranges::for_each(
         fields,
-        [&ret, this](Field const &fld) -> void {
+        [&ret](Field const &fld) -> void {
             ret += fld.type->encode();
         });
     return ret;
@@ -488,7 +489,7 @@ std::wstring TypeType::encode() const
 
 bool Type::is_a(TypeKind kind) const
 {
-    return description.index() == static_cast<int>(kind);
+    return description.index() == static_cast<size_t>(kind);
 }
 
 TypeKind Type::kind() const
@@ -573,17 +574,17 @@ bool Type::compatible(pType const &other) const
     auto right = (description.index() <= other->description.index()) ? other : id;
     return std::visit(
         overloads {
-            [this, &other](TypeList const &list, SliceType const &slice) -> bool {
+            [](TypeList const &list, SliceType const &slice) -> bool {
                 return std::ranges::all_of(list.types, [&slice](auto const &t) {
                     return t->compatible(slice.slice_of);
                 });
             },
-            [this, &other](TypeList const &list, DynArray const &dynarr) -> bool {
+            [](TypeList const &list, DynArray const &dynarr) -> bool {
                 return std::ranges::all_of(list.types, [&dynarr](auto const &t) {
                     return t->compatible(dynarr.array_of);
                 });
             },
-            [this, &other](TypeList const &list, Array const &arr) -> bool {
+            [](TypeList const &list, Array const &arr) -> bool {
                 if (list.types.size() != arr.size) {
                     return false;
                 }
@@ -591,12 +592,12 @@ bool Type::compatible(pType const &other) const
                     return t->compatible(arr.array_of);
                 });
             },
-            [this, &other](TypeList const &list, ZeroTerminatedArray const &arr) -> bool {
+            [](TypeList const &list, ZeroTerminatedArray const &arr) -> bool {
                 return std::ranges::all_of(list.types, [&arr](auto const &t) {
                     return t->compatible(arr.array_of);
                 });
             },
-            [this, &other](TypeList const &list, StructType const &strukt) -> bool {
+            [](TypeList const &list, StructType const &strukt) -> bool {
                 if (list.types.size() != strukt.fields.size()) {
                     return false;
                 }
@@ -608,7 +609,7 @@ bool Type::compatible(pType const &other) const
                 UNREACHABLE();
                 return false;
             },
-            [this, &other](auto const &, auto const &) -> bool {
+            [](auto const &, auto const &) -> bool {
                 return false;
             } },
         left->description, right->description);
@@ -631,16 +632,16 @@ bool Type::assignable_to(pType const &lhs) const
             [](BoolType const &, ResultType const &) -> bool {
                 return true;
             },
-            [this, &rhs](OptionalType const &optional, auto const &) -> bool {
+            [&rhs](OptionalType const &optional, auto const &) -> bool {
                 return optional.type == rhs;
             },
-            [this, &rhs](ResultType const &result, auto const &) -> bool {
+            [&rhs](ResultType const &result, auto const &) -> bool {
                 return result.success == rhs || result.error == rhs;
             },
             [&lhs](ReferenceType const &ref, auto const &) -> bool {
                 return ref.referencing->assignable_to(lhs);
             },
-            [this, &lhs](auto const &, auto const &) -> bool {
+            [](auto const &, auto const &) -> bool {
                 return false;
             } },
         lhs->description, description);
@@ -683,13 +684,13 @@ std::map<std::wstring, pType> Type::infer_generic_arguments(pType const &param_t
                 [&mapping, &infer](RangeType const &d, RangeType const &other) -> void {
                     infer(mapping, d.range_of, other.range_of);
                 },
-                [&mapping, &infer, &arg](auto const &d, TypeAlias const &other) -> void {
+                [&mapping, &infer, &arg](auto const &, TypeAlias const &other) -> void {
                     infer(mapping, arg, other.alias_of);
                 },
-                [&mapping, &arg](auto const &d, GenericParameter const &generic) -> void {
+                [&mapping, &arg](auto const &, GenericParameter const &generic) -> void {
                     mapping[generic.name] = arg;
                 },
-                [](auto const &d, auto const &other) -> void {
+                [](auto const &, auto const &) -> void {
                 } },
             arg->description, param->description);
     };
@@ -699,6 +700,57 @@ std::map<std::wstring, pType> Type::infer_generic_arguments(pType const &param_t
     std::map<std::wstring, pType> ret;
     infer(ret, this->id, param_type);
     return ret;
+}
+
+template<typename Descr>
+Cardinality cardinality(pType const &, Descr const &)
+{
+    return { };
+}
+
+template<>
+Cardinality cardinality(pType const &, EnumType const &descr)
+{
+    return descr.values.size();
+}
+
+template<>
+Cardinality cardinality(pType const &, TaggedUnionType const &descr)
+{
+    return cardinality(descr.tag_type);
+}
+
+template<>
+Cardinality cardinality(pType const &, OptionalType const &descr)
+{
+    if (auto c { cardinality(descr.type) }; c) {
+        return c.value() + 1;
+    }
+    return { };
+}
+
+template<>
+Cardinality cardinality(pType const &, Array const &descr)
+{
+    if (auto c { cardinality(descr.array_of) }; c) {
+        return static_cast<size_t>(pow(c.value(), descr.size));
+    }
+    return { };
+}
+
+template<>
+Cardinality cardinality(pType const &, ReferenceType const &descr)
+{
+    return cardinality(descr.referencing);
+}
+
+Cardinality cardinality(pType const &type)
+{
+    return std::visit(
+        [&type](auto const &descr) -> Cardinality {
+            return cardinality(type, descr);
+        },
+        type->description);
 }
 
 TypeRegistry::TypeRegistry()
@@ -713,14 +765,14 @@ TypeRegistry::TypeRegistry()
     i64 = make_type(L"i64", IntType::i64);
     f32 = make_type(L"f32", FloatType::f32);
     f64 = make_type(L"f64", FloatType::f64);
-    boolean = make_type(L"bool", BoolType {});
+    boolean = make_type(L"bool", BoolType { });
     string = make_type(L"string", SliceType { TypeRegistry::u32 });
     string_builder = make_type(L"string_builder", DynArray { TypeRegistry::u32 });
     cstring = make_type(L"cstring", ZeroTerminatedArray { TypeRegistry::u8 });
     character = make_type(L"char", TypeAlias { TypeRegistry::u32 });
-    void_ = make_type(L"void", VoidType {});
+    void_ = make_type(L"void", VoidType { });
     pointer = make_type(L"pointer", PointerType { void_ });
-    module = make_type(L"module", ModuleType {});
+    module = make_type(L"module", ModuleType { });
 }
 
 TypeRegistry &TypeRegistry::the()
@@ -919,13 +971,14 @@ pType TypeRegistry::result_of(pType success, pType error)
     assert(success);
     assert(error);
     for (auto const &t : types) {
-        if (std::visit(overloads {
-                           [&success, &error](ResultType const descr) -> bool {
-                               return descr.success == success && descr.error == error;
-                           },
-                           [](auto const &) -> bool {
-                               return false;
-                           } },
+        if (std::visit(
+                overloads {
+                    [&success, &error](ResultType const descr) -> bool {
+                        return descr.success == success && descr.error == error;
+                    },
+                    [](auto const &) -> bool {
+                        return false;
+                    } },
                 t.description)) {
             return t.id;
         }
@@ -943,7 +996,7 @@ pType TypeRegistry::function_of(std::vector<pType> const &parameters, pType resu
                     [&params_type_list, &result](FunctionType const &descr) -> bool {
                         return descr.parameters == params_type_list && descr.result == result;
                     },
-                    [](auto const &x) -> bool {
+                    [](auto const &) -> bool {
                         return false;
                     } },
                 t.description)) {

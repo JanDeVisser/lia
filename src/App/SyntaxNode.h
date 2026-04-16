@@ -39,6 +39,7 @@ using namespace Util;
     S(Continue)            \
     S(CString)             \
     S(Decimal)             \
+    S(DefaultSwitchValue)  \
     S(DeferStatement)      \
     S(Embed)               \
     S(Enum)                \
@@ -69,6 +70,8 @@ using namespace Util;
     S(String)              \
     S(Struct)              \
     S(StructMember)        \
+    S(SwitchCase)          \
+    S(SwitchStatement)     \
     S(TagValue)            \
     S(TypeSpecification)   \
     S(UnaryExpression)     \
@@ -281,6 +284,10 @@ struct Decimal {
     double value;
 
     Decimal(std::wstring_view whole, std::wstring_view fraction = L"", std::wstring_view exponent = L"");
+};
+
+struct DefaultSwitchValue {
+    DefaultSwitchValue() = default;
 };
 
 struct DeferStatement {
@@ -579,6 +586,21 @@ struct Struct {
     Struct(std::wstring name, ASTNodes members);
 };
 
+struct SwitchCase {
+    ASTNode case_value;
+    ASTNode statement;
+
+    SwitchCase(ASTNode case_value, ASTNode statement);
+};
+
+struct SwitchStatement {
+    Label    label;
+    ASTNode  switch_value;
+    ASTNodes switch_cases;
+
+    SwitchStatement(Label label, ASTNode switch_value, ASTNodes switch_cases);
+};
+
 struct TagValue {
     ASTNode      operand { nullptr };
     int64_t      tag_value;
@@ -721,6 +743,7 @@ concept Breakable = std::is_same_v<N, Block>
     || std::is_same_v<N, IfStatement>
     || std::is_same_v<N, ForStatement>
     || std::is_same_v<N, LoopStatement>
+    || std::is_same_v<N, SwitchStatement>
     || std::is_same_v<N, WhileStatement>;
 
 template<typename N>
@@ -740,6 +763,7 @@ using SyntaxNode = std::variant<Dummy,
     Continue,
     CString,
     Decimal,
+    DefaultSwitchValue,
     DeferStatement,
     Embed,
     Enum,
@@ -770,6 +794,8 @@ using SyntaxNode = std::variant<Dummy,
     String,
     Struct,
     StructMember,
+    SwitchCase,
+    SwitchStatement,
     TagValue,
     TypeSpecification,
     UnaryExpression,

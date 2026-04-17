@@ -1435,10 +1435,14 @@ ASTNode Parser::parse_for()
         lexer.lex();
     }
     token = lexer.peek();
+    auto bm { lexer.bookmark() };
     auto range = parse_expression();
     if (range == nullptr) {
-        append(token, "Error parsing `for` range");
-        return { };
+        lexer.push_back(bm);
+        if (range = parse_type(); range == nullptr) {
+            append(token, "Error parsing `for` range");
+            return { };
+        }
     }
     token = lexer.peek();
     auto stmt = parse_statement();

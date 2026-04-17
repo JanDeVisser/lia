@@ -478,7 +478,19 @@ struct Number {
     {
     }
 
+    Number(pType const &type, auto v)
+    {
+        assert(is<IntType>(type));
+        assign(get<IntType>(type), v);
+    }
+
     Number(IntType const &type, auto v)
+    {
+        assign(type, v);
+    }
+
+private:
+    void assign(IntType const &type, auto v)
     {
         if (type.is_signed) {
             switch (type.width_bits) {
@@ -606,7 +618,7 @@ struct TagValue {
     int64_t      tag_value;
     std::wstring label;
     pType        payload_type;
-    ASTNode      payload;
+    ASTNode      payload { nullptr };
 
     TagValue(int64_t tag_value, std::wstring label, pType payload_type, ASTNode payload);
     TagValue(ASTNode operand, int64_t tag_value, std::wstring label, pType payload_type, ASTNode payload);

@@ -299,7 +299,6 @@ ASTNode normalize(ASTNode n, ForStatement const &impl)
 {
     n->init_namespace();
     auto range_expr = normalize(impl.range_expr);
-    n->ns->register_variable(impl.range_variable, get<BinaryExpression>(range_expr).lhs);
     return make_node<ForStatement>(n, impl.range_variable, range_expr, normalize(impl.statement));
 }
 

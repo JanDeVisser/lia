@@ -1,0 +1,14 @@
+enum X {
+    A, B, C, D, E,
+}
+
+export func main() i32 {
+    for x in X {
+        switch x {
+            X.A => putln("A");
+            X.B, X.E => putln("B or E");
+            _ => putln("C or D");
+        }
+    }
+    return 0::i32
+}

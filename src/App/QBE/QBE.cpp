@@ -387,8 +387,7 @@ GenResult generate_qbe_node(ASTNode const &n, Extern const &impl, QBEContext &ct
     return QBEOperand { n, ILValue::null() };
 }
 
-template<>
-GenResult generate_qbe_node(ASTNode const &n, ForStatement const &impl, QBEContext &ctx)
+GenResult generate_for_range(ASTNode const &n, ForStatement const &impl, QBEContext &ctx)
 {
     auto const &range = get<BinaryExpression>(impl.range_expr);
     auto const &range_start = range.lhs;
@@ -443,6 +442,52 @@ GenResult generate_qbe_node(ASTNode const &n, ForStatement const &impl, QBEConte
         ctx.add_operation(LabelDef { LabelType::End, n });
         return QBEOperand { n, ILValue::null() };
     }
+}
+
+GenResult generate_for_enum(ASTNode const &n, ForStatement const &impl, QBEContext &ctx)
+{
+    auto const &enum_type { get<TypeType>(impl.range_expr->bound_type).type };
+    auto const &enum_descr { get<EnumType>(enum_type) };
+    auto const &underlying { enum_descr.underlying_type };
+    auto        init { (n.repo)->make_node<Number>(n->location, underlying, enum_descr.values[0].value) };
+    init->bound_type = underlying;
+    init->status = ASTStatus::Bound;
+    if (auto res = variable_decl(n, impl.range_variable, underlying, init, ctx); !res.has_value()) {
+        return std::unexpected(res.error());
+    } else {
+        auto const &range_var = res.value();
+        auto        enum_ptr { ctx.add_enumeration(enum_type) };
+        auto        enum_local { ILValue::local(++ctx.next_var, ILBaseType::L) };
+        auto        counter { ILValue::local(++ctx.next_var, ILBaseType::L) };
+        auto        mapped { ILValue::local(++ctx.next_var, underlying) };
+        auto        range_ended { ILValue::local(++ctx.next_var, ILBaseType::W) };
+        ctx += LoadDef { enum_ptr, counter },
+            ExprDef { enum_ptr, ILValue::integer(size_of(ILBaseType::L), ILBaseType::L), ILOperation::Add, enum_local },
+            LabelDef { LabelType::Begin, n },
+            ExprDef { counter, ILValue::integer(0, ILBaseType::L), ILOperation::Greater, range_ended },
+            JnzDef { range_ended, QBELabel { LabelType::Top, n }, QBELabel { LabelType::End, n } },
+            LabelDef { LabelType::Top, n },
+            LoadDef { enum_local, mapped },
+            StoreDef { mapped, range_var.get_value() };
+        TRY_GENERATE(impl.statement, ctx);
+        ctx += ExprDef { counter, ILValue::integer(1, ILBaseType::L), ILOperation::Sub, counter },
+            ExprDef { enum_local, ILValue::integer(2 * size_of(ILBaseType::L), ILBaseType::L), ILOperation::Add, enum_local },
+            JmpDef { LabelType::Begin, n },
+            LabelDef { LabelType::End, n };
+        return QBEOperand { n, ILValue::null() };
+    }
+}
+
+template<>
+GenResult generate_qbe_node(ASTNode const &n, ForStatement const &impl, QBEContext &ctx)
+{
+    if (is<BinaryExpression>(impl.range_expr) && get<BinaryExpression>(impl.range_expr).op == Operator::Range) {
+        return generate_for_range(n, impl, ctx);
+    }
+    if (is<TypeType>(impl.range_expr->bound_type) && is<EnumType>(get<TypeType>(impl.range_expr->bound_type).type)) {
+        return generate_for_enum(n, impl, ctx);
+    }
+    return QBEOperand { n, ILValue::null() };
 }
 
 template<>
@@ -662,8 +707,9 @@ GenResult generate_qbe_node(ASTNode const &n, SwitchStatement const &impl, QBECo
                             ctx += LabelDef { LabelType::Begin, e };
                             auto case_var { TRY_GENERATE(e, ctx) };
                             case_var = TRY_DEREFERENCE(case_var, ctx);
+                            auto v { (is<EnumType>(case_var.ptype)) ? std::get<ILValues>(case_var.get_value().inner)[1] : case_var.get_value() };
                             auto match { ILValue::local(++ctx.next_var, ILBaseType::W) };
-                            ctx += ExprDef { switch_var.get_value(), case_var.get_value(), ILOperation::Equals, match },
+                            ctx += ExprDef { switch_var.get_value(), v, ILOperation::Equals, match },
                                 JnzDef { match, QBELabel { LabelType::Top, c }, QBELabel { LabelType::End, e } },
                                 LabelDef { LabelType::End, e };
                         }
@@ -676,8 +722,10 @@ GenResult generate_qbe_node(ASTNode const &n, SwitchStatement const &impl, QBECo
                     },
                     [&c, &switch_var, &switch_case, &ctx](auto const &) -> GenResult {
                         auto case_var { TRY_GENERATE(switch_case.case_value, ctx) };
+                        case_var = TRY_DEREFERENCE(case_var, ctx);
+                        auto v { (is<EnumType>(case_var.ptype)) ? std::get<ILValues>(case_var.get_value().inner)[1] : case_var.get_value() };
                         auto match { ILValue::local(++ctx.next_var, ILBaseType::W) };
-                        ctx += ExprDef { switch_var.get_value(), case_var.get_value(), ILOperation::Equals, match },
+                        ctx += ExprDef { switch_var.get_value(), v, ILOperation::Equals, match },
                             JnzDef { match, QBELabel { LabelType::Top, c }, QBELabel { LabelType::End, c } };
                         return { };
                     } },

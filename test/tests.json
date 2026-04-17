@@ -34,5 +34,6 @@
   "33_loop",
   "34_break_while",
   "35_break_if",
-  "36_switch_int"
+  "36_switch_int",
+  "37_switch_enum"
 ]

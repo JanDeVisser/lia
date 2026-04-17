@@ -895,9 +895,21 @@ template<>
 BindResult bind(ASTNode n, ForStatement &impl)
 {
     try_bind(impl.range_expr);
-    if (!is<RangeType>((impl.range_expr)->bound_type)) {
-        return n.bind_error(L"`for` loop range expression is a `{}`, not a range", (impl.range_expr)->bound_type);
+    auto range_type = impl.range_expr->bound_type;
+    if (!is<RangeType>(range_type) && !(is<TypeType>(range_type) && is<EnumType>(get<TypeType>(range_type).type))) {
+        return n.bind_error(L"`for` loop range expression is a `{}`, not a range", range_type->to_string());
     }
+    ASTNode variable_node { nullptr };
+    if (is<TypeType>(range_type)) {
+        auto enum_type { get<TypeType>(range_type).type };
+        auto enum_descr { get<EnumType>(enum_type) };
+        variable_node = (n.repo)->make_node<TagValue>(n->location, enum_descr.values[0].value, enum_descr.values[0].label, TypeRegistry::void_, nullptr);
+        variable_node->bound_type = enum_type;
+        variable_node->status = ASTStatus::Bound;
+    } else {
+        variable_node = get<BinaryExpression>(impl.range_expr).lhs;
+    }
+    n->ns->register_variable(impl.range_variable, variable_node);
     return bind(impl.statement);
 }
 

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "App/Keyword.h"
 #include <ranges>
 #include <sstream>
 
@@ -120,6 +121,11 @@ ILBaseType qbe_type_code(StructType const &)
 ILBaseType qbe_type_code(TypeList const &)
 {
     return ILBaseType::L;
+}
+
+ILBaseType qbe_type_code(EnumType const &impl)
+{
+    return qbe_type_code(impl.underlying_type);
 }
 
 ILBaseType qbe_type_code(auto const &type)

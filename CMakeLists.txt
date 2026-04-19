@@ -101,43 +101,43 @@ target_link_libraries(
 add_library(
     LiaLang
     STATIC
-    src/App/Bind.cpp
-    src/App/Coerce.cpp
-    src/App/Config.cpp
-    src/App/Dump.cpp
-    src/App/Fold.cpp
-    src/App/Keyword.cpp
-    src/App/Namespace.cpp
-    src/App/Normalize.cpp
-    src/App/Operator.cpp
-    src/App/Resolve.cpp
-    src/App/Parser.cpp
-    src/App/Stamp.cpp
-    src/App/SyntaxNode.cpp
-    src/App/Type.cpp
-    src/App/AST/Call.cpp
-    src/App/AST/Constant.cpp
-    src/App/AST/ControlFlow.cpp
-    src/App/AST/Defer.cpp
-    src/App/AST/Expression.cpp
-    src/App/AST/Function.cpp
-    src/App/AST/Identifier.cpp
-    src/App/AST/Module.cpp
-    src/App/AST/PreProcess.cpp
-    src/App/AST/Switch.cpp
-    src/App/AST/Type.cpp
-    src/App/QBE/Context.cpp
-    src/App/QBE/Execute.cpp
-    src/App/QBE/Expr.cpp
-    src/App/QBE/File.cpp
-    src/App/QBE/Function.cpp
-    src/App/QBE/Instruction.cpp
-    src/App/QBE/Native.cpp
-    src/App/QBE/Operator.cpp
-    src/App/QBE/QBE.cpp
-    src/App/QBE/QBEInternal.cpp
-    src/App/QBE/Type.cpp
-    src/App/QBE/Value.cpp
+    src/Lang/Bind.cpp
+    src/Lang/Coerce.cpp
+    src/Lang/Config.cpp
+    src/Lang/Dump.cpp
+    src/Lang/Fold.cpp
+    src/Lang/Keyword.cpp
+    src/Lang/Namespace.cpp
+    src/Lang/Normalize.cpp
+    src/Lang/Operator.cpp
+    src/Lang/Resolve.cpp
+    src/Lang/Parser.cpp
+    src/Lang/Stamp.cpp
+    src/Lang/SyntaxNode.cpp
+    src/Lang/Type.cpp
+    src/Lang/AST/Call.cpp
+    src/Lang/AST/Constant.cpp
+    src/Lang/AST/ControlFlow.cpp
+    src/Lang/AST/Defer.cpp
+    src/Lang/AST/Expression.cpp
+    src/Lang/AST/Function.cpp
+    src/Lang/AST/Identifier.cpp
+    src/Lang/AST/Module.cpp
+    src/Lang/AST/PreProcess.cpp
+    src/Lang/AST/Switch.cpp
+    src/Lang/AST/Type.cpp
+    src/Lang/QBE/Context.cpp
+    src/Lang/QBE/Execute.cpp
+    src/Lang/QBE/Expr.cpp
+    src/Lang/QBE/File.cpp
+    src/Lang/QBE/Function.cpp
+    src/Lang/QBE/Instruction.cpp
+    src/Lang/QBE/Native.cpp
+    src/Lang/QBE/Operator.cpp
+    src/Lang/QBE/QBE.cpp
+    src/Lang/QBE/QBEInternal.cpp
+    src/Lang/QBE/Type.cpp
+    src/Lang/QBE/Value.cpp
 )
 
 target_link_libraries(
@@ -155,7 +155,7 @@ include_directories(. src)
 
 add_executable(
         lia
-        src/App/Main.cpp
+        src/Lang/Main.cpp
 )
 
 target_link_libraries(

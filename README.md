@@ -6,7 +6,7 @@ A post-C/C++ systems programming language.
 
 You need
 
-- [zig|https://ziglang.org/download/] 0.16. I'm working with 0.16 right now.
+- [zig](https://ziglang.org/download/) 0.16. I'm working with 0.16 right now.
 - `python3` for the test runner.
 
 ```bash
